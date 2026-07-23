@@ -1,0 +1,31 @@
+appId: com.allgayer.allgo-movie-maker
+productName: Allgo Movie Maker
+copyright: Caio Allgayer
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - package.json
+extraResources:
+  - from: resources/bin
+    to: bin
+    filter:
+      - '**/*'
+asar: true
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  icon: build/icon.ico
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: Allgo Movie Maker
+portable:
+  artifactName: AllgoMovieMaker-${version}-portable.exe
+publish: null

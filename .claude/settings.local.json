@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(node -v)",
+      "PowerShell(npm -v)",
+      "PowerShell(gh --version)",
+      "PowerShell(\"---\")",
+      "PowerShell(npm install --no-audit --no-fund 2>&1)",
+      "PowerShell(npx vitest run 2>&1)",
+      "PowerShell(npx tsc --noEmit 2>&1)",
+      "PowerShell(\"=== TYPECHECK ===\")",
+      "PowerShell(npx electron-vite build 2>&1)",
+      "PowerShell(\"=== OUT ===\")",
+      "PowerShell(try { \\(Get-Command ffmpeg -ErrorAction Stop\\).Source } catch { \"ffmpeg NAO esta no PATH\" }; if \\(Test-Path \"resources\\\\bin\\\\ffmpeg.exe\"\\) { \"resources/bin/ffmpeg.exe OK\" } else { \"resources/bin vazio\" })",
+      "PowerShell($env:ELECTRON_ENABLE_LOGGING=1; $p = Start-Process -FilePath \"node_modules\\\\.bin\\\\electron.cmd\" -ArgumentList \".\" -PassThru -RedirectStandardError \"$env:TEMP\\\\allgo-err.txt\" -RedirectStandardOutput \"$env:TEMP\\\\allgo-out.txt\" -NoNewWindow; Start-Sleep -Seconds 12; if \\(-not $p.HasExited\\) { \"APP RODANDO \\(pid $\\($p.Id\\)\\)\"; Stop-Process -Id $p.Id -Force } else { \"APP SAIU com codigo $\\($p.ExitCode\\)\" }; \"--- STDERR ---\"; Get-Content \"$env:TEMP\\\\allgo-err.txt\" -ErrorAction SilentlyContinue | Select-Object -First 40; \"--- STDOUT ---\"; Get-Content \"$env:TEMP\\\\allgo-out.txt\" -ErrorAction SilentlyContinue | Select-Object -First 20)",
+      "PowerShell(npx electron-vite build 2>&1 | Select-Object -Last 3; $env:ALLGO_DEBUG=\"1\"; & \"node_modules\\\\.bin\\\\electron.cmd\" \"$env:TEMP\\\\claude\\\\C--Projetos-Allgo-Movie-Maker\\\\cd5bb77d-401e-4cc1-8dda-dce94350d033\\\\scratchpad\\\\smoke.js\" 2>&1 | Select-Object -First 40)",
+      "PowerShell(npm run setup 2>&1)",
+      "PowerShell(Get-ChildItem \"resources\\\\bin\" | Select-Object Name, @{n='MB';e={[math]::Round\\($_.Length/1MB,1\\)}}; & \"resources\\\\bin\\\\ffmpeg.exe\" -hide_banner -version 2>&1 | Select-Object -First 1)",
+      "PowerShell($env:ALLGO_E2E=\"1\"; npx vitest run tests/exportIntegration.test.ts 2>&1 | Select-Object -Last 50)",
+      "PowerShell($f = \"$env:TEMP\\\\ftest.txt\"; Set-Content $f \"testsrc2=d=1[v]\" -NoNewline; & \"resources\\\\bin\\\\ffmpeg.exe\" -hide_banner -loglevel error -y -f lavfi -/filter_complex $f -map \"[v]\" -frames:v 1 \"$env:TEMP\\\\ftest.png\" 2>&1; if \\($?\\) { \"OK: -/filter_complex funciona\"; Remove-Item \"$env:TEMP\\\\ftest.png\" -ErrorAction SilentlyContinue })",
+      "PowerShell($f = \"$env:TEMP\\\\ftest.txt\"; Set-Content $f \"testsrc2=d=1:s=320x240[v]\" -NoNewline; & \"resources\\\\bin\\\\ffmpeg.exe\" -hide_banner -loglevel error -y -/filter_complex $f -map \"[v]\" -frames:v 1 \"$env:TEMP\\\\ftest.png\" 2>&1; if \\(Test-Path \"$env:TEMP\\\\ftest.png\"\\) { \"OK: -/filter_complex funciona\"; Remove-Item \"$env:TEMP\\\\ftest.png\" })",
+      "PowerShell($env:ALLGO_E2E=\"1\"; npx vitest run tests/exportIntegration.test.ts 2>&1 | Select-Object -Last 40)",
+      "PowerShell(\"=== BUILD ===\")",
+      "PowerShell(& \"node_modules\\\\.bin\\\\electron.cmd\" \"$env:TEMP\\\\claude\\\\C--Projetos-Allgo-Movie-Maker\\\\cd5bb77d-401e-4cc1-8dda-dce94350d033\\\\scratchpad\\\\smoke2.js\" 2>&1 | Select-String \"PROBE\")",
+      "PowerShell(git config --global user.name)",
+      "PowerShell(git config --global user.email)",
+      "PowerShell(git config --global credential.helper)",
+      "PowerShell(\"---remote helper---\")",
+      "PowerShell(\"credential managers:\"; git help -a 2>&1 | Select-String \"credential-manager\" ; \\(Get-Command git-credential-manager -ErrorAction SilentlyContinue\\).Source; \\(Get-Command git-credential-manager-core -ErrorAction SilentlyContinue\\).Source; \"--- env ---\"; if \\($env:GITHUB_TOKEN\\) { \"GITHUB_TOKEN presente\" } else { \"sem GITHUB_TOKEN\" })",
+      "PowerShell(git init 2>&1; git config user.name \"Caio Allgayer\"; git config user.email \"caio.allgayer@gmail.com\"; git add -A; git status --short | Measure-Object -Line | Select-Object -ExpandProperty Lines | ForEach-Object { \"$_ arquivos staged\" })"
+    ]
+  }
+}
