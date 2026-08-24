@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Project } from '@shared/types'
+import type { ImageClip, Project } from '@shared/types'
 import { clock } from '@engine/clock'
-import { importPaths } from '@engine/media'
+import { importPaths, suggestedFileName } from '@engine/media'
 import { captureRegistry } from '@engine/capture'
 import { emptyProject, useProject } from '@store/project'
 import { useUi } from '@store/ui'
@@ -15,6 +15,9 @@ import { Welcome } from '@components/Welcome'
 import { Toasts } from '@components/Toasts'
 
 const AUTOSAVE_INTERVAL = 30_000
+
+/** Área de transferência interna de placas (Ctrl+C/Ctrl+V). */
+let imageClipboard: { clip: ImageClip; track: number } | null = null
 
 export default function App() {
   const project = useProject((s) => s.project)
@@ -100,7 +103,8 @@ export default function App() {
       const state = useProject.getState()
       let path = forceDialog ? null : state.filePath
       if (!path) {
-        path = await window.allgo.saveProjectDialog(state.project.name || 'projeto')
+        const named = state.project.name && state.project.name !== 'Projeto sem nome'
+        path = await window.allgo.saveProjectDialog(named ? state.project.name : suggestedFileName())
         if (!path) return
       }
       const name = (path.split(/[\\/]/).pop() ?? 'projeto').replace(/\.allgo$/i, '')
@@ -264,6 +268,27 @@ export default function App() {
             event.preventDefault()
             store.redo()
             return
+          case 'c': {
+            const selection = ui.selection
+            if (selection.type !== 'image') return
+            for (let t = 0; t < store.project.overlayTracks.length; t++) {
+              const clip = store.project.overlayTracks[t].find((c) => c.id === selection.id)
+              if (clip) {
+                event.preventDefault()
+                imageClipboard = { clip: structuredClone(clip), track: t }
+                ui.toast('Placa copiada — Ctrl+V cola no playhead.', 'info')
+                return
+              }
+            }
+            return
+          }
+          case 'v': {
+            if (!imageClipboard) return
+            event.preventDefault()
+            const id = store.pasteImageClip(imageClipboard.clip, imageClipboard.track, clock.time)
+            ui.select({ type: 'image', id })
+            return
+          }
           default:
             return
         }
@@ -272,6 +297,8 @@ export default function App() {
       switch (event.key) {
         case ' ':
           event.preventDefault()
+          // No modo prévia de mídia, o espaço é do player da prévia (SourcePreview).
+          if (ui.previewMedia) break
           clock.setPlaying(!clock.playing)
           break
         case 's':
@@ -279,6 +306,8 @@ export default function App() {
           event.preventDefault()
           store.splitAt(clock.time)
           break
+        case 'd':
+        case 'D':
         case 'Delete':
         case 'Backspace': {
           const selection = ui.selection
@@ -357,7 +386,15 @@ export default function App() {
         <PropertiesPanel />
       </div>
 
-      <Timeline />
+      {/* Interagir com a timeline sai do modo prévia de mídia. */}
+      <div
+        style={{ display: 'contents' }}
+        onPointerDownCapture={() => {
+          if (useUi.getState().previewMedia) useUi.getState().setPreviewMedia(null)
+        }}
+      >
+        <Timeline />
+      </div>
 
       {isEmpty && (
         <Welcome

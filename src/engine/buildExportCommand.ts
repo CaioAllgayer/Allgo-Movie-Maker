@@ -1,4 +1,4 @@
-import type { EncoderName, ExportOptions, ImageClip, MediaItem, Project } from '@shared/types'
+import type { ColorAdjust, EncoderName, ExportOptions, ImageClip, MediaItem, Project } from '@shared/types'
 import { computeLayout, type Layout } from './computeLayout'
 
 /**
@@ -156,12 +156,9 @@ export function buildExportCommand(
   /* Ajuste global de cor + fades de preto                             */
   /* ---------------------------------------------------------------- */
 
-  const { brightness, contrast, saturation } = project.adjust
-  if (brightness !== 0 || contrast !== 0 || saturation !== 0) {
-    chunks.push(
-      `${videoLabel}eq=brightness=${num(brightness / 200)}:` +
-        `contrast=${num(1 + contrast / 100)}:saturation=${num(1 + saturation / 100)}[veq]`
-    )
+  const color = colorFilterChain(project.adjust)
+  if (color) {
+    chunks.push(`${videoLabel}${color}[veq]`)
     videoLabel = '[veq]'
   }
 
@@ -267,13 +264,46 @@ const CQ: Record<EncoderName, { alta: number; media: number }> = {
   hevc_nvenc: { alta: 21, media: 25 },
   h264_nvenc: { alta: 19, media: 23 },
   av1_nvenc: { alta: 28, media: 32 },
+  libx265: { alta: 21, media: 25 },
   libx264: { alta: 18, media: 22 }
+}
+
+/**
+ * Replica o `filter` CSS do preview no grafo do FFmpeg.
+ *
+ * Brilho CSS é multiplicativo; `eq=brightness` é aditivo em YUV e no arquivo
+ * final quase não se via. Aqui: converte para RGB, multiplica os canais
+ * (mesmo fator `1 + v/200` do CSS), aplica contraste/saturação do `eq` e
+ * volta para yuv420p. O `format=gbrp` também força download de frames de GPU
+ * quando o decode veio com `-hwaccel`.
+ */
+export function colorFilterChain(adjust: ColorAdjust | undefined): string | null {
+  const brightness = adjust?.brightness ?? 0
+  const contrast = adjust?.contrast ?? 0
+  const saturation = adjust?.saturation ?? 0
+  if (brightness === 0 && contrast === 0 && saturation === 0) return null
+  const b = 1 + brightness / 200
+  const c = 1 + contrast / 100
+  const s = 1 + saturation / 100
+  const parts = ['format=gbrp']
+  if (Math.abs(b - 1) > 1e-9) {
+    parts.push(`colorchannelmixer=rr=${num(b)}:gg=${num(b)}:bb=${num(b)}`)
+  }
+  if (Math.abs(c - 1) > 1e-9 || Math.abs(s - 1) > 1e-9) {
+    parts.push(`eq=contrast=${num(c)}:saturation=${num(s)}`)
+  }
+  parts.push('format=yuv420p')
+  return parts.join(',')
 }
 
 export function encoderArgs(codec: EncoderName, quality: 'alta' | 'media'): string[] {
   const q = CQ[codec][quality]
   if (codec === 'libx264') {
     return ['-c:v', 'libx264', '-preset', 'medium', '-crf', String(q), '-pix_fmt', 'yuv420p']
+  }
+  if (codec === 'libx265') {
+    // HEVC pela CPU: mesmo codec do hevc_nvenc, para máquina sem GPU NVIDIA.
+    return ['-c:v', 'libx265', '-preset', 'medium', '-crf', String(q), '-pix_fmt', 'yuv420p', '-tag:v', 'hvc1']
   }
   const base = [
     '-c:v', codec,
@@ -293,10 +323,30 @@ export function encoderArgs(codec: EncoderName, quality: 'alta' | 'media'): stri
   return base
 }
 
+/** Bitrate típico (Mbps) de vídeo 1080p30 por família de codec, nas nossas qualidades. */
+const ESTIMATE_MBPS: Record<'h264' | 'hevc' | 'av1', { alta: number; media: number }> = {
+  h264: { alta: 16, media: 10 },
+  hevc: { alta: 10, media: 6 },
+  av1: { alta: 7, media: 4.5 }
+}
+
+function codecFamily(codec: EncoderName): 'h264' | 'hevc' | 'av1' {
+  if (codec === 'av1_nvenc') return 'av1'
+  if (codec === 'hevc_nvenc' || codec === 'libx265') return 'hevc'
+  return 'h264'
+}
+
 /** Estimativa grosseira do tamanho final, em bytes (para o resumo do modal). */
-export function estimateSize(duration: number, quality: 'alta' | 'media'): number {
-  const mbps = quality === 'alta' ? 16 : 10
-  return Math.round(((mbps * 1_000_000) / 8 + 192_000 / 8) * duration)
+export function estimateSize(
+  duration: number,
+  quality: 'alta' | 'media',
+  codec: EncoderName = 'hevc_nvenc',
+  fps = 30
+): number {
+  const mbps = ESTIMATE_MBPS[codecFamily(codec)][quality]
+  // 60 fps não dobra o tamanho (compressão temporal aproveita quadros parecidos).
+  const fpsFactor = fps >= 60 ? 1.35 : 1
+  return Math.round(((mbps * fpsFactor * 1_000_000) / 8 + 192_000 / 8) * duration)
 }
 
 export function layoutOf(project: Project): Layout {

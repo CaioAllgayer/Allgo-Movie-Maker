@@ -56,6 +56,8 @@ interface ProjectStore {
   appendVideoClip(mediaId: string, atIndex?: number): string | null
   addImageClip(mediaId: string, trackIndex: number, start: number, duration?: number): string | null
   addAudioClip(mediaId: string, start: number): string | null
+  /** Cola uma cópia de uma placa (Ctrl+V): mesma aparência/fades, começando em `start`. */
+  pasteImageClip(source: ImageClip, preferredTrack: number, start: number): string
 
   removeClip(id: string): void
   splitAt(time: number): void
@@ -248,6 +250,32 @@ export const useProject = create<ProjectStore>((set, get) => ({
         fadeOut: 1.5
       })
       p.musicTrack.sort((a, b) => a.start - b.start)
+    })
+    return id
+  },
+
+  pasteImageClip(source, preferredTrack, start) {
+    const id = uid('ic')
+    get().edit((p) => {
+      const clip: ImageClip = { ...clone(source), id, start: Math.max(0, start) }
+      const fits = (track: ImageClip[]) =>
+        track.every((c) => c.start + c.duration <= clip.start || c.start >= clip.start + clip.duration)
+      // Mesma trilha se houver espaço; senão a primeira trilha acima com espaço
+      // (criando uma nova se necessário).
+      let trackIndex = -1
+      const from = Math.max(0, Math.min(preferredTrack, p.overlayTracks.length - 1))
+      for (let i = from; i < p.overlayTracks.length; i++) {
+        if (fits(p.overlayTracks[i])) {
+          trackIndex = i
+          break
+        }
+      }
+      if (trackIndex < 0) {
+        p.overlayTracks.push([])
+        trackIndex = p.overlayTracks.length - 1
+      }
+      p.overlayTracks[trackIndex].push(clip)
+      p.overlayTracks[trackIndex].sort((a, b) => a.start - b.start)
     })
     return id
   },

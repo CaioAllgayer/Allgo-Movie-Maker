@@ -112,7 +112,7 @@ export interface MediaInfo {
   kind: MediaKind
 }
 
-export type EncoderName = 'hevc_nvenc' | 'h264_nvenc' | 'av1_nvenc' | 'libx264'
+export type EncoderName = 'hevc_nvenc' | 'h264_nvenc' | 'av1_nvenc' | 'libx265' | 'libx264'
 
 export interface EncoderSupport {
   hevc_nvenc: boolean

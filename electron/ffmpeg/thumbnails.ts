@@ -84,6 +84,7 @@ export async function generateWaveform(path: string, width: number, height: numb
     [
       '-hide_banner', '-nostdin', '-y',
       '-i', path,
+      '-vn',
       '-filter_complex',
       `[0:a]aformat=channel_layouts=mono,showwavespic=s=${width}x${height}:colors=#9678ff`,
       '-frames:v', '1',

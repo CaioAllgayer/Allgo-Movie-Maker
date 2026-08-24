@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { RotateCcw } from 'lucide-react'
 import type { AudioClip, ImageClip, VideoClip } from '@shared/types'
 import { computeLayout, MAX_TRANSITION, MIN_TRANSITION, maxTransitionAt } from '@engine/computeLayout'
@@ -59,7 +59,9 @@ function Slider({
   min,
   max,
   step = 1,
-  format,
+  inputScale = 1,
+  decimals = 0,
+  suffix,
   onChange,
   onCommit
 }: {
@@ -68,15 +70,51 @@ function Slider({
   min: number
   max: number
   step?: number
-  format?: (v: number) => string
+  /** Fator valor→caixinha (ex.: 100 mostra 0–2 como 0–200%). */
+  inputScale?: number
+  decimals?: number
+  suffix?: string
   onChange: (value: number) => void
   onCommit?: () => void
 }) {
+  // Enquanto o usuário digita, a caixinha mostra o texto cru; ao sair, volta
+  // a espelhar o valor formatado.
+  const [text, setText] = useState<string | null>(null)
+  const display = (value * inputScale).toFixed(decimals)
+
+  const apply = (raw: string) => {
+    const parsed = Number(raw.replace(',', '.'))
+    if (!Number.isFinite(parsed)) return
+    onChange(Math.max(min, Math.min(max, parsed / inputScale)))
+  }
+
   return (
     <div className="slider-row">
       <div className="head">
         <span>{label}</span>
-        <span className="value">{format ? format(value) : value}</span>
+        <span className="value-box">
+          <input
+            type="number"
+            className="value-input"
+            min={min * inputScale}
+            max={max * inputScale}
+            step={step * inputScale}
+            value={text ?? display}
+            onFocus={(e) => {
+              onCommit?.()
+              e.currentTarget.select()
+            }}
+            onChange={(e) => {
+              setText(e.target.value)
+              apply(e.target.value)
+            }}
+            onBlur={() => setText(null)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur()
+            }}
+          />
+          {suffix && <span className="unit">{suffix}</span>}
+        </span>
       </div>
       <input
         type="range"
@@ -111,7 +149,6 @@ function GlobalAdjust() {
           value={adjust.brightness}
           min={-100}
           max={100}
-          format={signed}
           onCommit={commit}
           onChange={(brightness) => setAdjust({ brightness })}
         />
@@ -120,7 +157,6 @@ function GlobalAdjust() {
           value={adjust.contrast}
           min={-100}
           max={100}
-          format={signed}
           onCommit={commit}
           onChange={(contrast) => setAdjust({ contrast })}
         />
@@ -129,7 +165,6 @@ function GlobalAdjust() {
           value={adjust.saturation}
           min={-100}
           max={100}
-          format={signed}
           onCommit={commit}
           onChange={(saturation) => setAdjust({ saturation })}
         />
@@ -147,9 +182,8 @@ function GlobalAdjust() {
       </div>
       <div className="prop-group">
         <p className="hint">
-          O ajuste vale para o vídeo inteiro, não por clipe. O preview usa filtro CSS e o export usa o
-          filtro <code>eq</code> do FFmpeg — as curvas não são idênticas, então em ajustes fortes pode
-          haver diferença sutil.
+          O ajuste vale para o vídeo inteiro, não por clipe. Preview e arquivo final usam o mesmo
+          mapeamento (brilho multiplicativo, contraste e saturação).
         </p>
       </div>
       <div className="prop-group">
@@ -160,9 +194,6 @@ function GlobalAdjust() {
   )
 }
 
-const signed = (v: number): string => (v > 0 ? `+${v}` : String(v))
-const seconds = (v: number): string => `${v.toFixed(1)} s`
-const percent = (v: number): string => `${Math.round(v * 100)}%`
 
 /* ==================================================================== */
 /* Clipe de vídeo                                                        */
@@ -212,7 +243,8 @@ function VideoClipProps({ id }: { id: string }) {
           min={0}
           max={2}
           step={0.01}
-          format={percent}
+          inputScale={100}
+          suffix="%"
           onCommit={commit}
           onChange={(volume) => patch((c) => { c.volume = volume })}
         />
@@ -256,7 +288,8 @@ function VideoClipProps({ id }: { id: string }) {
                   min={0.2}
                   max={3}
                   step={0.1}
-                  format={seconds}
+                  decimals={1}
+                  suffix="s"
                   onCommit={commit}
                   onChange={(v) => patch((c) => { c.fadeFromBlack = v })}
                 />
@@ -286,7 +319,8 @@ function VideoClipProps({ id }: { id: string }) {
                   min={0.2}
                   max={3}
                   step={0.1}
-                  format={seconds}
+                  decimals={1}
+                  suffix="s"
                   onCommit={commit}
                   onChange={(v) => patch((c) => { c.fadeToBlack = v })}
                 />
@@ -376,7 +410,8 @@ function ImageClipProps({ id }: { id: string }) {
             min={0.1}
             max={2}
             step={0.1}
-            format={seconds}
+            decimals={1}
+            suffix="s"
             onCommit={commit}
             onChange={(v) =>
               patch((c) => {
@@ -396,7 +431,8 @@ function ImageClipProps({ id }: { id: string }) {
           min={0}
           max={1}
           step={0.01}
-          format={percent}
+          inputScale={100}
+          suffix="%"
           onCommit={commit}
           onChange={(opacity) => patch((c) => { c.opacity = opacity })}
         />
@@ -406,7 +442,8 @@ function ImageClipProps({ id }: { id: string }) {
           min={0.05}
           max={3}
           step={0.01}
-          format={(v) => `${Math.round(v * 100)}%`}
+          inputScale={100}
+          suffix="%"
           onCommit={commit}
           onChange={(scale) => patch((c) => { c.scale = scale })}
         />
@@ -468,7 +505,8 @@ function AudioClipProps({ id }: { id: string }) {
           min={0}
           max={2}
           step={0.01}
-          format={percent}
+          inputScale={100}
+          suffix="%"
           onCommit={commit}
           onChange={(volume) => patch((c) => { c.volume = volume })}
         />
@@ -478,7 +516,8 @@ function AudioClipProps({ id }: { id: string }) {
           min={0}
           max={5}
           step={0.1}
-          format={seconds}
+          decimals={1}
+          suffix="s"
           onCommit={commit}
           onChange={(fadeIn) => patch((c) => { c.fadeIn = fadeIn })}
         />
@@ -488,7 +527,8 @@ function AudioClipProps({ id }: { id: string }) {
           min={0}
           max={5}
           step={0.1}
-          format={seconds}
+          decimals={1}
+          suffix="s"
           onCommit={commit}
           onChange={(fadeOut) => patch((c) => { c.fadeOut = fadeOut })}
         />
@@ -533,7 +573,8 @@ function JunctionProps({ index }: { index: number }) {
             min={MIN_TRANSITION}
             max={max}
             step={0.1}
-            format={seconds}
+            decimals={1}
+            suffix="s"
             onCommit={() => useProject.getState().commit()}
             onChange={(v) =>
               useProject.getState().update((p) => {

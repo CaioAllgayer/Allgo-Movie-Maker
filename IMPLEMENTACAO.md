@@ -60,7 +60,7 @@ Referência visual de resultado final (vídeo editado pelo usuário no CapCut): 
 - **Split:** botão/tecla `S` divide o clipe no playhead.
 - **Zoom da timeline:** slider + `Ctrl+scroll`, de "projeto inteiro visível" até ~10 px por frame.
 - **Snapping:** bordas de clipes, playhead e marcações grudam entre si (tolerância ~8 px), com toggle para desligar.
-- Clique na régua ou arrastar o playhead = seek. Clique em clipe = seleciona (mostra propriedades). `Del` remove.
+- Clique na régua ou arrastar o playhead = seek. Clique em clipe = seleciona (mostra propriedades). `Del` **ou `D`** remove o item selecionado (clipe de vídeo, figura ou áudio) — o atalho `D` só vale quando o foco não está em um campo de texto.
 - Imagens overlay: duração livre (arrastar bordas), posição livre no tempo (podem ter buracos entre si), padrão inicial 5 s.
 
 ### 3.3 Transição: desvanecimento (crossfade)
@@ -72,6 +72,8 @@ Referência visual de resultado final (vídeo editado pelo usuário no CapCut): 
 ### 3.4 Imagens overlay (placas)
 - Arrastar imagem do bin para a área de overlay da timeline (ou soltar direto no preview no tempo atual).
 - **Posicionar e redimensionar direto no preview:** clipe de imagem selecionado mostra caixa com 4 alças de canto (redimensionar proporcional) + arrastar para mover. Sem rotação (não é usado). Guias de alinhamento simples: linhas quando cruza o centro horizontal/vertical (com snap).
+- **Redimensionar com o scroll:** com uma figura selecionada, girar a roda do mouse **sobre o preview** aumenta/diminui a escala dela (passo ~3% por tick, `Shift` = passo fino de 1%), mantendo o centro fixo. Não confundir com o `Ctrl+scroll` de zoom da timeline — o scroll de escala só atua quando o cursor está sobre o preview e há figura selecionada.
+- **Copiar/colar figura (`Ctrl+C` / `Ctrl+V`):** com um clipe de imagem selecionado na timeline, `Ctrl+C` copia e `Ctrl+V` cola uma cópia **com tudo**: mesma imagem, posição, escala, opacidade, duração e animações de entrada/saída. A cópia entra começando no playhead, na mesma trilha se houver espaço livre; se colidir com outro clipe, colocar na primeira trilha acima com espaço (criando trilha nova se preciso). A cópia colada já nasce selecionada, pronta pra arrastar.
 - Propriedades do clipe de imagem: **animação = Nenhuma / Fade-in / Fade-out / Ambos**, com duração do fade (padrão 0,5 s, faixa 0,1–2,0 s), e **opacidade** geral (0–100%, padrão 100).
 - Ordem das trilhas = ordem de empilhamento (trilha mais alta na timeline renderiza por cima).
 
@@ -79,13 +81,16 @@ Referência visual de resultado final (vídeo editado pelo usuário no CapCut): 
 - Área central, proporção 16:9, fundo escuro. Renderiza a composição completa: vídeo + crossfades + overlays com fades + ajuste de cor.
 - Controles: play/pause (`Espaço`), timecode `MM:SS.d / MM:SS.d`, frame anterior/próximo (`←`/`→`), ir ao início.
 - O preview deve refletir **tudo** que o export vai gerar (WYSIWYG). Ver §8.
+- **Modo prévia de mídia:** clicar em um item do media bin toca **aquele arquivo sozinho** na tela central (vídeo com áudio; imagem exibida estática), com os mesmos controles de play/pause/seek — serve pra conferir o material antes de arrastar pra timeline. Uma faixa discreta no topo do preview indica o modo ("Prévia: nome-do-arquivo" + botão ✕ "Voltar ao projeto"). Clicar na timeline, no playhead ou dar play no projeto sai automaticamente do modo prévia e volta à composição. Implementação: usar um terceiro elemento `<video>` dedicado (não mexer nos decks A/B do projeto).
 
 ### 3.6 Ajuste global de cor
 - Painel "Ajustes" (aplicado ao vídeo inteiro, nunca por clipe): **Brilho** (−100…+100), **Contraste** (−100…+100), **Saturação** (−100…+100) — saturação é de graça no mesmo filtro, incluir. Botão "Restaurar".
+- **Cada slider tem uma caixinha numérica ao lado** (input editável, não só mostrador): digitar um valor atualiza o slider e o preview na hora (aplicar no Enter/blur; aceitar negativo; clampar em −100…+100; setas ↑/↓ na caixinha somam ±1). Slider e caixinha ficam sempre sincronizados. Usar o mesmo padrão slider+caixinha nos demais controles numéricos do app (volume, opacidade, durações de fade/transição).
 - Preview em tempo real via CSS filter no contêiner do preview; export via filtro `eq` (mapeamento em §9.4).
 
 ### 3.7 Exportação
 - Botão "Exportar" destacado → modal com: nome/pasta do arquivo, resolução (fixo 1920×1080), fps (auto = fps do primeiro clipe, opções 30/60), qualidade (Alta/Média — mapeia para CQ), codec (HEVC padrão / H.264 / AV1 se disponível), e resumo (duração, tamanho estimado).
+- **Nome sugerido por padrão:** `BEA 23-07-2026` (prefixo fixo "BEA" + data de hoje em `dd-mm-aaaa` com hífens — formato válido como nome de arquivo no Windows; nunca usar barras). Se já existir arquivo com esse nome na pasta, sufixar ` (2)`, ` (3)`… O mesmo nome padrão vale para salvar o projeto (`BEA 23-07-2026.allgo`). O usuário pode obviamente trocar o nome antes de confirmar.
 - Barra de progresso real (parse do stderr do FFmpeg), tempo restante estimado, botão cancelar (kill do processo + apagar arquivo parcial), notificação ao concluir com botão "Abrir pasta".
 - A UI fica utilizável mas bloqueada para edição durante o export (overlay no editor).
 
@@ -95,11 +100,11 @@ Referência visual de resultado final (vídeo editado pelo usuário no CapCut): 
 
 ## 4. Extras (implementar — são simples e valem a pena)
 
-1. **Undo/Redo** (`Ctrl+Z`/`Ctrl+Y`) — histórico de snapshots do estado da timeline (estado é JSON pequeno; guardar até 100 passos).
+1. **Undo/Redo** (`Ctrl+Z`/`Ctrl+Y`) — histórico de snapshots do estado da timeline (estado é JSON pequeno; guardar até 100 passos). Além dos atalhos, **botões visíveis ↩ Desfazer / ↪ Refazer na barra superior** (desabilitados quando não há o que desfazer/refazer, com tooltip) — é a rede de segurança para quando o usuário apaga um vídeo da timeline sem querer.
 2. **Áudio básico por clipe de vídeo:** slider de volume (0–200%) e mute. O crossfade de vídeo já faz crossfade do áudio automaticamente (acrossfade no export).
 3. **Trilha de música de fundo** (1 trilha de áudio opcional): arrastar mp3/wav/m4a, trim, volume, fade-in/out. Muito comum em vídeo de YouTube.
 4. **Capturar frame** (`Ctrl+Shift+S`): salva PNG do frame atual do preview em resolução 1080p — útil pra thumbnail do YouTube.
-5. **Atalhos:** `Espaço` play/pause, `S` split, `Del` apagar, `←/→` frame a frame, `Shift+←/→` pula 1 s, `Home/End`, `Ctrl+S` salvar, `Ctrl+E` exportar, `+/-` zoom timeline.
+5. **Atalhos:** `Espaço` play/pause, `S` split, `Del`/`D` apagar, `Ctrl+C`/`Ctrl+V` copiar/colar figura, `←/→` frame a frame, `Shift+←/→` pula 1 s, `Home/End`, `Ctrl+S` salvar, `Ctrl+Z`/`Ctrl+Y` desfazer/refazer, `Ctrl+E` exportar, `+/-` zoom timeline.
 6. **Projetos recentes** na tela inicial (abrir direto).
 7. **Waveform** simplificado nos clipes de vídeo/áudio da timeline (gerar via ffmpeg `showwavespic` ou decodificar picos com WebAudio) — ajuda muito a cortar no lugar certo.
 
@@ -286,6 +291,11 @@ Cada imagem é um input com `-loop 1 -t <duration>` e:
 8. Corte seco (junção sem transição) não produz frame preto nem flash.
 9. Export cancelado não deixa processo órfão nem arquivo corrompido visível.
 10. Máquina sem NVIDIA: export funciona via libx264.
+11. Figura selecionada: scroll sobre o preview redimensiona suavemente; `Ctrl+C`/`Ctrl+V` duplica com posição, escala, duração e fades idênticos.
+12. `D` apaga o item selecionado (e não dispara enquanto se digita em um campo); botão ↩ Desfazer na barra superior recupera um vídeo apagado da timeline.
+13. Clicar num vídeo do media bin toca a prévia dele na tela central com áudio; clicar na timeline volta ao projeto.
+14. Modal de exportar e de salvar projeto abrem com o nome `BEA <data de hoje>` já preenchido.
+15. Digitar `-37` na caixinha de brilho aplica exatamente −37 e o slider acompanha.
 
 ## 12. Estrutura de pastas sugerida
 

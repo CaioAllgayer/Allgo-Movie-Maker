@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ExportOptions } from '@shared/types'
-import { buildExportCommand, encoderArgs, estimateSize } from '@engine/buildExportCommand'
+import { buildExportCommand, colorFilterChain, encoderArgs, estimateSize } from '@engine/buildExportCommand'
 import { computeLayout } from '@engine/computeLayout'
 import { imageClip, media, project, videoClip } from './helpers'
 
@@ -217,14 +217,33 @@ describe('buildExportCommand — cor, fades de preto e música', () => {
     expect(buildExportCommand(p, 'out.mp4', options()).filterScript).not.toContain('eq=')
   })
 
-  it('mapeia os sliders conforme §9.4', () => {
+  it('replica o filtro CSS: brilho multiplicativo em RGB + contraste/saturação', () => {
     const p = project({
       media: [media('a')],
       videoTrack: [videoClip('v1', 'a')],
       adjust: { brightness: 20, contrast: 10, saturation: -50 }
     })
-    const eq = lines(buildExportCommand(p, 'out.mp4', options()).filterScript).find((l) => l.includes('eq='))!
-    expect(eq).toContain('eq=brightness=0.1:contrast=1.1:saturation=0.5')
+    const chain = lines(buildExportCommand(p, 'out.mp4', options()).filterScript).find((l) =>
+      l.includes('colorchannelmixer')
+    )!
+    expect(chain).toContain('format=gbrp')
+    expect(chain).toContain('colorchannelmixer=rr=1.1:gg=1.1:bb=1.1')
+    expect(chain).toContain('eq=contrast=1.1:saturation=0.5')
+    expect(chain).not.toContain('eq=brightness')
+    expect(colorFilterChain({ brightness: 20, contrast: 10, saturation: -50 })).toBe(
+      'format=gbrp,colorchannelmixer=rr=1.1:gg=1.1:bb=1.1,eq=contrast=1.1:saturation=0.5,format=yuv420p'
+    )
+  })
+
+  it('aplica cor depois dos overlays (vale para o quadro composto)', () => {
+    const p = project({
+      media: [media('a'), media('png', { kind: 'image', path: 'C:\\p.png' })],
+      videoTrack: [videoClip('v1', 'a', { outPoint: 10 })],
+      overlayTracks: [[imageClip('i1', 'png')]],
+      adjust: { brightness: 10, contrast: 0, saturation: 0 }
+    })
+    const script = buildExportCommand(p, 'out.mp4', options()).filterScript
+    expect(script.indexOf('overlay=x=')).toBeLessThan(script.indexOf('colorchannelmixer'))
   })
 
   it('fade de preto é aplicado no stream final, depois dos overlays', () => {
@@ -276,11 +295,31 @@ describe('encoderArgs', () => {
   it('fallback de CPU usa crf', () => {
     expect(encoderArgs('libx264', 'alta')).toEqual(expect.arrayContaining(['-c:v', 'libx264', '-crf', '18']))
   })
+
+  it('HEVC de CPU usa crf e tag hvc1', () => {
+    const args = encoderArgs('libx265', 'alta')
+    expect(args).toEqual(expect.arrayContaining(['-c:v', 'libx265', '-crf', '21', '-tag:v', 'hvc1']))
+    expect(args).not.toContain('-cq')
+  })
 })
 
 describe('estimateSize', () => {
   it('cresce com a duração e cai na qualidade média', () => {
     expect(estimateSize(60, 'alta')).toBeGreaterThan(estimateSize(60, 'media'))
     expect(estimateSize(120, 'alta')).toBeGreaterThan(estimateSize(60, 'alta'))
+  })
+
+  it('reflete a compressão do codec: H.264 > HEVC > AV1', () => {
+    expect(estimateSize(60, 'alta', 'libx264')).toBeGreaterThan(estimateSize(60, 'alta', 'hevc_nvenc'))
+    expect(estimateSize(60, 'alta', 'hevc_nvenc')).toBeGreaterThan(estimateSize(60, 'alta', 'av1_nvenc'))
+    // HEVC por GPU ou CPU é o mesmo codec: mesma estimativa.
+    expect(estimateSize(60, 'alta', 'libx265')).toBe(estimateSize(60, 'alta', 'hevc_nvenc'))
+  })
+
+  it('60 fps aumenta a estimativa, mas não dobra', () => {
+    const base = estimateSize(60, 'alta', 'hevc_nvenc', 30)
+    const high = estimateSize(60, 'alta', 'hevc_nvenc', 60)
+    expect(high).toBeGreaterThan(base)
+    expect(high).toBeLessThan(base * 2)
   })
 })

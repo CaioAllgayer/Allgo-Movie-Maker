@@ -9,20 +9,27 @@ import {
   transitionAtTime,
   type Layout
 } from '@engine/computeLayout'
+import {
+  CUE_DRIFT,
+  PLAY_DRIFT,
+  PREROLL,
+  advanceTimelineTime,
+  keepClipIndices,
+  sourceTimeFor,
+  type MediaSample
+} from '@engine/playback'
 import { clock, formatTime } from '@engine/clock'
-import { cssFilterFor, mediaUrl } from '@engine/media'
+import { cssFilterFor, deckMediaUrl, mediaUrl } from '@engine/media'
 import { captureRegistry } from '@engine/capture'
 import { useProject } from '@store/project'
 import { useUi } from '@store/ui'
+import { SourcePreview } from '@components/SourcePreview'
 
-/** Quanto antes de uma junção o próximo clipe é carregado/posicionado no deck ocioso. */
-const PREROLL = 1.0
-/** Acima disso, re-seeka o deck (drift). Abaixo, deixa quieto para não picotar o áudio. */
-const DRIFT_TOLERANCE = 0.3
 const MUSIC_DRIFT = 0.08
 
 interface DeckSlot {
   clipIndex: number | null
+  clipId: string | null
   src: string | null
   gain: GainNode | null
 }
@@ -31,6 +38,7 @@ export function Preview() {
   const project = useProject((s) => s.project)
   const selection = useUi((s) => s.selection)
   const select = useUi((s) => s.select)
+  const previewMedia = useUi((s) => s.previewMedia)
 
   const layout = useMemo(() => computeLayout(project), [project])
   const layoutRef = useRef<Layout>(layout)
@@ -47,8 +55,8 @@ export function Preview() {
   const overlayRefs = useRef(new Map<string, HTMLImageElement>())
 
   const decks = useRef<DeckSlot[]>([
-    { clipIndex: null, src: null, gain: null },
-    { clipIndex: null, src: null, gain: null }
+    { clipIndex: null, clipId: null, src: null, gain: null },
+    { clipIndex: null, clipId: null, src: null, gain: null }
   ])
   const audioCtx = useRef<AudioContext | null>(null)
 
@@ -163,14 +171,26 @@ export function Preview() {
       const clip = proj.videoTrack[clipIndex]
       const media = clip ? mediaById.get(clip.mediaId) : undefined
       if (!clip || !media) return
-      const src = mediaUrl(media.path)
+      const src = deckMediaUrl(media.path, deckIndex)
       const slot = decks.current[deckIndex]
+      const srcChanged = slot.src !== src
       slot.clipIndex = clipIndex
-      if (slot.src !== src) {
+      slot.clipId = clip.id
+      if (srcChanged) {
         slot.src = src
+        el.loop = false
         el.src = src
       }
       applyVolume(deckIndex, clip.volume, clip.muted)
+      const cl = layoutRef.current.clips[clipIndex]
+      if (cl) {
+        const target = sourceTimeFor(cl, clock.time)
+        const cue = () => {
+          if (Number.isFinite(target) && el.readyState >= 1) el.currentTime = target
+        }
+        if (srcChanged) el.addEventListener('loadeddata', cue, { once: true })
+        else cue()
+      }
     },
     [mediaById, applyVolume]
   )
@@ -188,26 +208,32 @@ export function Preview() {
   useEffect(() => {
     let raf = 0
 
+    const sampleOf = (clipIndex: number): MediaSample | null => {
+      const d = deckOf(clipIndex)
+      const el = d >= 0 ? deckRefs[d].current : null
+      if (!el) return null
+      return {
+        currentTime: el.currentTime,
+        paused: el.paused,
+        ended: el.ended,
+        ready: el.readyState >= 2
+      }
+    }
+
     const syncDecks = (t: number, isPlaying: boolean) => {
       const l = layoutRef.current
       const proj = projectRef.current
-      const current = clipAtTime(l, t)
-      let nextIndex: number | null = null
-      if (current) {
-        const next = l.clips[current.index + 1]
-        // Pré-carrega o próximo ~1 s antes da junção, senão o corte engasga.
-        if (next && t >= next.timelineStart - PREROLL) nextIndex = next.index
-      }
-
-      const keep = new Set<number>()
-      if (current) keep.add(current.index)
-      if (nextIndex !== null) keep.add(nextIndex)
+      const keep = new Set(keepClipIndices(l, t, PREROLL))
 
       for (let d = 0; d < 2; d++) {
         const slot = decks.current[d]
-        if (slot.clipIndex !== null && !keep.has(slot.clipIndex)) {
+        if (slot.clipIndex === null) continue
+        const cl = l.clips[slot.clipIndex]
+        const stale = !cl || cl.clipId !== slot.clipId || !keep.has(slot.clipIndex)
+        if (stale) {
           deckRefs[d].current?.pause()
           slot.clipIndex = null
+          slot.clipId = null
         }
       }
       for (const index of keep) {
@@ -226,21 +252,21 @@ export function Preview() {
 
         applyVolume(d, clip.volume, clip.muted)
 
-        const target = Math.min(
-          Math.max(cl.inPoint, cl.inPoint + (t - cl.timelineStart)),
-          Math.max(cl.inPoint, cl.outPoint - 0.001)
-        )
+        const target = sourceTimeFor(cl, t)
         const inRange = t >= cl.timelineStart && t < cl.timelineEnd
+        const drift = isPlaying && inRange && !el.paused ? PLAY_DRIFT : CUE_DRIFT
         if (isPlaying && inRange) {
           if (el.paused) {
-            if (Number.isFinite(target)) el.currentTime = target
+            if (el.readyState >= 1 && Number.isFinite(target) && Math.abs(el.currentTime - target) > CUE_DRIFT) {
+              el.currentTime = target
+            }
             void el.play().catch(() => undefined)
-          } else if (Math.abs(el.currentTime - target) > DRIFT_TOLERANCE) {
+          } else if (el.readyState >= 1 && Math.abs(el.currentTime - target) > drift) {
             el.currentTime = target
           }
         } else {
           if (!el.paused) el.pause()
-          if (el.readyState >= 1 && Math.abs(el.currentTime - target) > 0.03) {
+          if (el.readyState >= 1 && Number.isFinite(target) && Math.abs(el.currentTime - target) > CUE_DRIFT) {
             el.currentTime = target
           }
         }
@@ -319,35 +345,28 @@ export function Preview() {
       if (blackout) blackout.style.opacity = String(1 - blackFadeAt(proj, l, t))
     }
 
-    const tick = () => {
+    let lastTs = performance.now()
+
+    const tick = (now: number) => {
       raf = requestAnimationFrame(tick)
       const l = layoutRef.current
-      let t = clock.time
+      const dt = Math.min(0.08, Math.max(0, (now - lastTs) / 1000))
+      lastTs = now
 
       if (clock.playing) {
-        // O deck do clipe mestre é o relógio: mantém áudio e vídeo em fase.
-        const master = clipAtTime(l, t)
-        if (master) {
-          const d = deckOf(master.index)
-          const el = d >= 0 ? deckRefs[d].current : null
-          if (el && !el.paused && el.readyState >= 2) {
-            t = master.timelineStart + (el.currentTime - master.inPoint)
-          } else {
-            t += 1 / 60
-          }
-        } else {
-          t += 1 / 60
-        }
-        if (l.duration > 0 && t >= l.duration) {
-          t = l.duration
-          clock.setTime(t)
-          clock.setPlaying(false)
-        } else {
-          clock.setTime(t)
-        }
-        t = clock.time
+        const result = advanceTimelineTime({
+          prevTime: clock.time,
+          dt,
+          playing: true,
+          duration: l.duration,
+          layout: l,
+          sample: sampleOf
+        })
+        clock.setTime(result.time)
+        if (result.reachedEnd) clock.setPlaying(false)
       }
 
+      const t = clock.time
       syncDecks(t, clock.playing)
       renderFrame(t)
     }
@@ -548,6 +567,39 @@ export function Preview() {
   }
 
   /* ------------------------------------------------------------------ */
+  /* Scroll sobre o preview redimensiona a placa selecionada             */
+  /* ------------------------------------------------------------------ */
+
+  const selectedImageRef = useRef<ImageClip | null>(null)
+  selectedImageRef.current = selectedImage
+  const lastWheelAt = useRef(0)
+
+  useEffect(() => {
+    const el = stageRef.current
+    if (!el) return
+    const onWheel = (event: WheelEvent) => {
+      const sel = selectedImageRef.current
+      if (!sel) return
+      event.preventDefault()
+      const now = performance.now()
+      // Uma rajada contínua de scroll vira UM passo de undo.
+      if (now - lastWheelAt.current > 600) useProject.getState().commit()
+      lastWheelAt.current = now
+      const step = event.shiftKey ? 0.01 : 0.03
+      const factor = event.deltaY < 0 ? 1 + step : 1 / (1 + step)
+      const scale = Math.max(0.05, Math.min(3, sel.scale * factor))
+      useProject.getState().update((p) => {
+        for (const track of p.overlayTracks) {
+          const clip = track.find((c) => c.id === sel.id)
+          if (clip) clip.scale = scale
+        }
+      })
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
+
+  /* ------------------------------------------------------------------ */
   /* Transporte                                                          */
   /* ------------------------------------------------------------------ */
 
@@ -597,6 +649,7 @@ export function Preview() {
               ref={deckRefs[i]}
               preload="auto"
               playsInline
+              loop={false}
               crossOrigin="anonymous"
               style={{ opacity: 0 }}
             />
@@ -674,6 +727,11 @@ export function Preview() {
           <b>{formatTime(timecode)}</b> / {formatTime(layout.duration)}
         </span>
       </div>
+
+      {/* Prévia de arquivo do bin: cobre a composição (que segue montada por baixo). */}
+      {previewMedia && (
+        <SourcePreview item={previewMedia} onClose={() => useUi.getState().setPreviewMedia(null)} />
+      )}
     </div>
   )
 }

@@ -3,7 +3,7 @@ import { Magnet, Scissors, Trash2, ZoomIn, ZoomOut, Blend, X } from 'lucide-reac
 import type { AudioClip, ImageClip, MediaItem, Project } from '@shared/types'
 import { computeLayout, totalDuration, type ClipLayout } from '@engine/computeLayout'
 import { clock, formatShort } from '@engine/clock'
-import { mediaUrl } from '@engine/media'
+import { mediaUrl, waveformSliceStyle } from '@engine/media'
 import { useThumbnails, useWaveform } from '../hooks/useMediaAssets'
 import { MAX_ZOOM, MIN_ZOOM, useUi } from '@store/ui'
 import { useProject } from '@store/project'
@@ -408,10 +408,11 @@ function VideoTrack({
           const clipWidth = Math.max(6, (l.timelineEnd - l.timelineStart) * zoom)
           const isSelected = selection.type === 'video' && selection.id === clip.id
           const isDragging = drag?.index === index
+          const hasAudio = Boolean(media?.hasAudio)
           return (
             <div
               key={clip.id}
-              className={`clip video${isSelected ? ' selected' : ''}${isDragging ? ' dragging' : ''}${media?.missing ? ' missing' : ''}`}
+              className={`clip video${isSelected ? ' selected' : ''}${isDragging ? ' dragging' : ''}${media?.missing ? ' missing' : ''}${hasAudio ? ' has-audio' : ''}`}
               style={{
                 left,
                 width: clipWidth,
@@ -421,7 +422,20 @@ function VideoTrack({
               onPointerDown={(e) => startReorder(e, index)}
             >
               {media && !media.missing && (
-                <Filmstrip media={media} inPoint={l.inPoint} outPoint={l.outPoint} width={clipWidth} />
+                <>
+                  <Filmstrip media={media} inPoint={l.inPoint} outPoint={l.outPoint} width={clipWidth} />
+                  {hasAudio && (
+                    <WaveformStrip
+                      path={media.path}
+                      enabled
+                      inPoint={l.inPoint}
+                      outPoint={l.outPoint}
+                      duration={media.duration}
+                      width={clipWidth}
+                      waveHeight={48}
+                    />
+                  )}
+                </>
               )}
               <div className="clip-title">{media?.name ?? 'mídia ausente'}</div>
               <div className="clip-badges">
@@ -471,6 +485,39 @@ function VideoTrack({
         {!layout.length && <div className="lane-empty">Arraste vídeos aqui</div>}
       </div>
     </div>
+  )
+}
+
+function WaveformStrip({
+  path,
+  enabled,
+  inPoint,
+  outPoint,
+  duration,
+  width,
+  height,
+  waveHeight = 90
+}: {
+  path: string | undefined
+  enabled: boolean
+  inPoint: number
+  outPoint: number
+  duration: number | undefined
+  width: number
+  height?: string
+  waveHeight?: number
+}) {
+  const waveform = useWaveform(path, enabled, 900, waveHeight)
+  if (!waveform) return null
+  return (
+    <div
+      className="waveform"
+      style={{
+        backgroundImage: `url("${waveform}")`,
+        ...waveformSliceStyle(duration, inPoint, outPoint, width),
+        ...(height ? { height } : null)
+      }}
+    />
   )
 }
 
@@ -697,14 +744,21 @@ function AudioClipView({
   selected: boolean
   onPointerDown: (event: React.PointerEvent, mode: 'move' | 'left' | 'right') => void
 }) {
-  const waveform = useWaveform(media?.path, Boolean(media && !media.missing))
   return (
     <div
       className={`clip audio${selected ? ' selected' : ''}${media?.missing ? ' missing' : ''}`}
       style={{ left, width }}
       onPointerDown={(e) => onPointerDown(e, 'move')}
     >
-      {waveform && <div className="waveform" style={{ backgroundImage: `url("${waveform}")`, height: '70%' }} />}
+      <WaveformStrip
+        path={media?.path}
+        enabled={Boolean(media && !media.missing)}
+        inPoint={clip.inPoint}
+        outPoint={clip.outPoint}
+        duration={media?.duration}
+        width={width}
+        height="70%"
+      />
       <div className="clip-title">{media?.name ?? 'áudio ausente'}</div>
       <div className="trim-handle left" onPointerDown={(e) => onPointerDown(e, 'left')} />
       <div className="trim-handle right" onPointerDown={(e) => onPointerDown(e, 'right')} />

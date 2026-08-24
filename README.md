@@ -49,11 +49,14 @@ consegue analisar mídia nem exportar.
 |---|---|
 | `Espaço` | Reproduzir / pausar |
 | `S` | Dividir o clipe no playhead |
-| `Del` | Remover o clipe selecionado |
+| `Del` / `D` | Remover o clipe selecionado |
+| `Ctrl+C` / `Ctrl+V` | Copiar / colar a placa selecionada (cola no playhead, com tamanho, posição e fades) |
 | `←` / `→` | Frame anterior / próximo |
 | `Shift` + `←` / `→` | Pular 1 segundo |
 | `Home` / `End` | Ir ao início / fim |
 | `Ctrl+Z` / `Ctrl+Y` | Desfazer / refazer |
+| Scroll sobre o preview | Redimensionar a placa selecionada (`Shift` = ajuste fino) |
+| `Esc` | Sair da prévia de mídia |
 | `Ctrl+S` | Salvar projeto |
 | `Ctrl+O` | Abrir projeto |
 | `Ctrl+E` | Exportar |

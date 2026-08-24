@@ -11,16 +11,32 @@ function cacheFile(): string {
   return join(app.getPath('userData'), 'encoders.json')
 }
 
+/** Primeira linha do `ffmpeg -version` — identifica a build embarcada. */
+async function ffmpegVersionLine(): Promise<string> {
+  const { stdout, stderr } = await run(ffmpegPath(), ['-version'], 10_000)
+  return (stdout || stderr).split('\n')[0]?.trim() ?? ''
+}
+
+interface EncoderCache {
+  /** versão do ffmpeg que gerou este resultado — trocar o binário refaz a detecção */
+  ffmpeg: string
+  encoders: EncoderSupport
+}
+
 /**
  * Testa cada encoder com um encode real de 1 frame — `-encoders` mente: lista
  * o NVENC mesmo em máquina sem placa NVIDIA, e só falha na hora do export.
- * Resultado fica em cache no userData (o hardware não muda entre sessões).
+ * Resultado fica em cache no userData, amarrado à versão do ffmpeg: se o
+ * binário for trocado (ex.: npm run setup baixou outra build), re-detecta.
  */
 export async function detectEncoders(force = false): Promise<EncoderSupport> {
   const file = cacheFile()
+  const version = await ffmpegVersionLine()
   if (!force && existsSync(file)) {
     try {
-      return JSON.parse(readFileSync(file, 'utf8')) as EncoderSupport
+      const cached = JSON.parse(readFileSync(file, 'utf8')) as Partial<EncoderCache>
+      if (cached.encoders && cached.ffmpeg === version) return cached.encoders
+      // Formato antigo (sem versão) ou binário trocado: refaz a detecção.
     } catch {
       /* cache corrompido: refaz a detecção */
     }
@@ -46,7 +62,8 @@ export async function detectEncoders(force = false): Promise<EncoderSupport> {
 
   try {
     mkdirSync(dirname(file), { recursive: true })
-    writeFileSync(file, JSON.stringify(result, null, 2), 'utf8')
+    const cache: EncoderCache = { ffmpeg: version, encoders: result }
+    writeFileSync(file, JSON.stringify(cache, null, 2), 'utf8')
   } catch {
     /* cache é otimização, não é crítico */
   }

@@ -129,6 +129,42 @@ export function addRecent(path: string, name?: string): void {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Preferências pequenas (settings.json no userData)                   */
+/* ------------------------------------------------------------------ */
+
+interface Settings {
+  /** última pasta usada no diálogo de exportar vídeo */
+  lastVideoDir?: string
+}
+
+function readSettings(): Settings {
+  const file = userFile('settings.json')
+  if (!existsSync(file)) return {}
+  try {
+    return JSON.parse(readFileSync(file, 'utf8')) as Settings
+  } catch {
+    return {}
+  }
+}
+
+function writeSettings(patch: Partial<Settings>): void {
+  try {
+    writeFileSync(userFile('settings.json'), JSON.stringify({ ...readSettings(), ...patch }, null, 2), 'utf8')
+  } catch {
+    /* preferência é conveniência, não bloqueia nada */
+  }
+}
+
+export function lastVideoDir(): string | null {
+  const dir = readSettings().lastVideoDir
+  return dir && existsSync(dir) ? dir : null
+}
+
+export function setLastVideoDir(dir: string): void {
+  writeSettings({ lastVideoDir: dir })
+}
+
 export function pathsExist(paths: string[]): Record<string, boolean> {
   const out: Record<string, boolean> = {}
   for (const p of paths) out[p] = existsSync(p)

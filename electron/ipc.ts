@@ -1,4 +1,4 @@
-import { basename } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import type { ExportOptions, Project } from '@shared/types'
 import { probeFile } from './ffmpeg/probe'
@@ -9,11 +9,13 @@ import {
   addRecent,
   autosave,
   clearAutosave,
+  lastVideoDir,
   latestAutosave,
   pathsExist,
   readAutosave,
   readProject,
   recentProjects,
+  setLastVideoDir,
   writePng,
   writeProject
 } from './storage'
@@ -86,12 +88,16 @@ export function registerIpc(): void {
   ipcMain.handle('dialog:saveVideo', async (_e, defaultName: string) => {
     const win = focused()
     if (!win) return null
+    // Abre na última pasta usada para exportar (se ainda existir).
+    const dir = lastVideoDir()
     const res = await dialog.showSaveDialog(win, {
       title: 'Exportar vídeo',
-      defaultPath: `${defaultName}.mp4`,
+      defaultPath: dir ? join(dir, `${defaultName}.mp4`) : `${defaultName}.mp4`,
       filters: [{ name: 'Vídeo MP4', extensions: ['mp4'] }]
     })
-    return res.canceled ? null : res.filePath
+    if (res.canceled || !res.filePath) return null
+    setLastVideoDir(dirname(res.filePath))
+    return res.filePath
   })
 
   ipcMain.handle('dialog:savePng', async (_e, defaultName: string) => {

@@ -4,7 +4,7 @@ import type { EncoderName, ExportQuality, ExportResult } from '@shared/types'
 import { computeLayout } from '@engine/computeLayout'
 import { estimateSize } from '@engine/buildExportCommand'
 import { formatTime } from '@engine/clock'
-import { formatBytes } from '@engine/media'
+import { formatBytes, suggestedFileName } from '@engine/media'
 import { useProject } from '@store/project'
 import { useUi } from '@store/ui'
 
@@ -24,21 +24,24 @@ export function ExportModal() {
     if (encoders?.hevc_nvenc) list.push({ value: 'hevc_nvenc', label: 'HEVC · NVENC (recomendado)' })
     if (encoders?.h264_nvenc) list.push({ value: 'h264_nvenc', label: 'H.264 · NVENC (mais compatível)' })
     if (encoders?.av1_nvenc) list.push({ value: 'av1_nvenc', label: 'AV1 · NVENC (menor arquivo)' })
+    // Sem GPU detectada o HEVC continua disponível pela CPU — mesmo codec, mais lento.
+    list.push({ value: 'libx265', label: `HEVC · CPU (libx265)${encoders?.hevc_nvenc ? '' : ' — recomendado'}` })
     list.push({ value: 'libx264', label: 'H.264 · CPU (libx264)' })
     return list
   }, [encoders])
 
-  const [codec, setCodec] = useState<EncoderName>('libx264')
+  const [codec, setCodec] = useState<EncoderName>('libx265')
   const [quality, setQuality] = useState<ExportQuality>('alta')
-  const [fps, setFps] = useState<number>(Math.round(project.fps) || 30)
+  // 30 fps por padrão: vídeo falado não precisa de 60, e o arquivo fica bem menor.
+  const [fps, setFps] = useState<number>(30)
   const [outputPath, setOutputPath] = useState<string | null>(null)
   const [result, setResult] = useState<ExportResult | null>(null)
   const [showLog, setShowLog] = useState(false)
 
   useEffect(() => {
     if (open) {
-      setCodec(available[0]?.value ?? 'libx264')
-      setFps(Math.round(project.fps) || 30)
+      setCodec(available[0]?.value ?? 'libx265')
+      setFps(30)
       setResult(null)
       setShowLog(false)
     }
@@ -72,8 +75,7 @@ export function ExportModal() {
   const progress = exportState.progress
 
   const chooseOutput = async () => {
-    const suggestion = project.name.replace(/[\\/:*?"<>|]/g, '').trim() || 'video'
-    const path = await window.allgo.saveVideoDialog(suggestion)
+    const path = await window.allgo.saveVideoDialog(suggestedFileName())
     if (path) setOutputPath(path)
     return path
   }
@@ -203,7 +205,7 @@ export function ExportModal() {
             </div>
             <div>
               <span>Tamanho estimado</span>
-              <b>≈ {formatBytes(estimateSize(layout.duration, quality))}</b>
+              <b>≈ {formatBytes(estimateSize(layout.duration, quality, codec, fps))}</b>
             </div>
           </div>
 

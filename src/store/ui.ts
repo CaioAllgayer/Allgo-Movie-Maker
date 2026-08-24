@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { EncoderSupport, ExportProgress } from '@shared/types'
+import type { EncoderSupport, ExportProgress, MediaItem } from '@shared/types'
 
 export type Selection =
   | { type: 'none' }
@@ -25,6 +25,10 @@ interface UiStore {
   selection: Selection
   select(selection: Selection): void
   clearSelection(): void
+
+  /** Prévia de um arquivo do bin na tela central (null = mostrando o projeto). */
+  previewMedia: MediaItem | null
+  setPreviewMedia(item: MediaItem | null): void
 
   /** pixels por segundo na timeline */
   zoom: number
@@ -54,6 +58,9 @@ export const useUi = create<UiStore>((set, get) => ({
   selection: { type: 'none' },
   select: (selection) => set({ selection }),
   clearSelection: () => set({ selection: { type: 'none' } }),
+
+  previewMedia: null,
+  setPreviewMedia: (previewMedia) => set({ previewMedia }),
 
   zoom: 60,
   setZoom: (zoom) => set({ zoom: Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom)) }),
