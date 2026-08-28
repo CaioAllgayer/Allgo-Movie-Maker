@@ -99,21 +99,27 @@ export default function App() {
   }, [openPath])
 
   const saveProject = useCallback(
-    async (forceDialog = false) => {
+    async (forceDialog = false): Promise<boolean> => {
       const state = useProject.getState()
       let path = forceDialog ? null : state.filePath
       if (!path) {
         const named = state.project.name && state.project.name !== 'Projeto sem nome'
         path = await window.allgo.saveProjectDialog(named ? state.project.name : suggestedFileName())
-        if (!path) return
+        if (!path) return false
       }
       const name = (path.split(/[\\/]/).pop() ?? 'projeto').replace(/\.allgo$/i, '')
       state.update((p) => {
         p.name = name
       })
-      await window.allgo.writeProject(path, useProject.getState().project)
-      useProject.getState().markSaved(path)
-      toast('Projeto salvo.', 'success')
+      try {
+        await window.allgo.writeProject(path, useProject.getState().project)
+        useProject.getState().markSaved(path)
+        toast('Projeto salvo.', 'success')
+        return true
+      } catch (err) {
+        toast(`Não foi possível salvar: ${(err as Error).message}`, 'error')
+        return false
+      }
     },
     [toast]
   )
@@ -124,6 +130,7 @@ export default function App() {
 
   const dirtyRef = useRef(dirty)
   dirtyRef.current = dirty
+  const closeBusyRef = useRef(false)
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -356,19 +363,46 @@ export default function App() {
   }, [captureFrame, exporting, openProject, saveProject, setShowExportModal])
 
   /* ------------------------------------------------------------------ */
-  /* Aviso ao fechar com alterações não salvas                           */
+  /* Fechar a janela (X / Alt+F4)                                        */
   /* ------------------------------------------------------------------ */
 
-  useEffect(() => {
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!dirtyRef.current) return
-      // O autosave já rodou; isso é só a rede de segurança final.
-      void window.allgo.autosave(useProject.getState().project)
-      event.preventDefault()
+  const handleCloseRequested = useCallback(async () => {
+    if (closeBusyRef.current) return
+    closeBusyRef.current = true
+    try {
+      const state = useProject.getState()
+      const current = state.project
+      if (current.media.length || current.videoTrack.length) {
+        try {
+          await window.allgo.autosave(current)
+        } catch {
+          // Autosave é rede de segurança — não bloqueia o fechamento.
+        }
+      }
+
+      if (useUi.getState().exportState.jobId !== null) {
+        const proceed = await window.allgo.confirmAbortExport()
+        if (!proceed) return
+      }
+
+      if (useProject.getState().dirty) {
+        const choice = await window.allgo.confirmUnsavedChanges(useProject.getState().project.name)
+        if (choice === 'cancel') return
+        if (choice === 'save') {
+          const saved = await saveProject()
+          if (!saved) return
+        }
+      }
+
+      await window.allgo.allowClose()
+    } catch (err) {
+      toast(`Não foi possível fechar: ${(err as Error).message}`, 'error')
+    } finally {
+      closeBusyRef.current = false
     }
-    window.addEventListener('beforeunload', onBeforeUnload)
-    return () => window.removeEventListener('beforeunload', onBeforeUnload)
-  }, [])
+  }, [saveProject, toast])
+
+  useEffect(() => window.allgo.onCloseRequested(() => void handleCloseRequested()), [handleCloseRequested])
 
   return (
     <div className="app">

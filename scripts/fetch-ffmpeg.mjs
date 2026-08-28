@@ -19,11 +19,11 @@ const ROOT = resolve(__dirname, '..')
 const BIN_DIR = join(ROOT, 'resources', 'bin')
 const TMP_DIR = join(ROOT, 'resources', '.tmp')
 
-// Versão ESTÁVEL (n7.1), não a nightly de master: as nightlies exigem NVENC SDK
-// de ponta (driver NVIDIA 610+), e a 7.1 funciona com drivers a partir do 551 —
-// senão o NVENC "some" em máquina com driver normal de uso diário.
+// Build estável pinada: as nightlies/master podem exigir uma API NVENC mais
+// nova que o driver NVIDIA instalado no notebook. Esta versão foi validada
+// com NVENC e evita que uma instalação limpa caia silenciosamente em CPU.
 const URL_ZIP =
-  'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-win64-gpl-7.1.zip'
+  'https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2025-08-31-13-00/ffmpeg-n7.1.1-57-g1b48158a23-win64-gpl-7.1.zip'
 
 function log(msg) {
   process.stdout.write(`[ffmpeg] ${msg}\n`)

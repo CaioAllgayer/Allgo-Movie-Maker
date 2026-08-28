@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, shell } from 'electron'
 import { registerAllgoProtocol, registerAllgoScheme } from './protocol'
-import { registerIpc } from './ipc'
+import { attachCloseGuard, registerIpc } from './ipc'
 import { cancelAllExports } from './ffmpeg/export'
 
 registerAllgoScheme()
@@ -34,6 +34,7 @@ function createWindow(): void {
   })
 
   mainWindow.once('ready-to-show', () => mainWindow?.show())
+  attachCloseGuard(mainWindow)
 
   // ALLGO_DEBUG=1 espelha o console do renderer no terminal — sem isso, um erro
   // de React só aparece se você abrir o DevTools.

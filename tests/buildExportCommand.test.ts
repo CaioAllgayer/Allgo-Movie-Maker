@@ -56,7 +56,7 @@ describe('buildExportCommand — estrutura básica', () => {
   it('normaliza todo clipe (xfade exige fps/SAR/formato iguais dos dois lados)', () => {
     const cmd = buildExportCommand(p, 'out.mp4', options())
     const chain = lines(cmd.filterScript)[0]
-    expect(chain).toContain('trim=start=1:end=6')
+    expect(chain).toContain('trim=start=0:end=5')
     expect(chain).toContain('scale=1920:1080:force_original_aspect_ratio=decrease')
     expect(chain).toContain('pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black')
     expect(chain).toContain('fps=30')
@@ -78,6 +78,14 @@ describe('buildExportCommand — estrutura básica', () => {
     expect(on.args.filter((a) => a === '-hwaccel')).toHaveLength(2)
     const off = buildExportCommand(two, 'out.mp4', options({ hwaccel: false }))
     expect(off.args).not.toContain('-hwaccel')
+  })
+
+  it('busca e limita cada input ao trecho usado pelo clipe', () => {
+    const cmd = buildExportCommand(p, 'out.mp4', options())
+    const inputArgs = cmd.args.slice(0, cmd.args.indexOf('-/filter_complex'))
+    expect(inputArgs).toEqual(expect.arrayContaining(['-ss', '1', '-t', '5', '-i', 'C:\\midia\\a.mp4']))
+    expect(cmd.filterScript).toContain('[0:v]trim=start=0:end=5')
+    expect(cmd.filterScript).toContain('[0:a]atrim=start=0:end=5')
   })
 })
 
@@ -269,7 +277,7 @@ describe('buildExportCommand — cor, fades de preto e música', () => {
     })
     const script = buildExportCommand(p, 'out.mp4', options()).filterScript
     const music = lines(script).find((l) => l.includes('[m0]'))!
-    expect(music).toContain('atrim=start=5:end=25')
+    expect(music).toContain('atrim=start=0:end=20')
     expect(music).toContain('volume=0.5')
     expect(music).toContain('afade=t=in:st=0:d=1')
     expect(music).toContain('afade=t=out:st=18:d=2')

@@ -209,9 +209,14 @@ Contêiner do preview (div 16:9) com camadas absolutas, de baixo pra cima:
 Export = **um único comando FFmpeg** com `filter_complex` construído a partir do `Project` + `computeLayout`. Escrever um módulo `buildExportCommand(project, output, options): string[]` **puro e testável** (unit tests comparando o grafo gerado — é a parte com mais chance de bug).
 
 ### 9.2 Grafo de vídeo
-Para cada clipe de vídeo `i` (input `i`):
+Para cada clipe de vídeo `i` (input `i`), buscar o trecho diretamente na entrada
+e limitar a leitura à duração usada (`-ss IN -t (OUT-IN) -i arquivo`). Isso é
+importante quando vários clipes vêm do mesmo arquivo grande: evita decodificar
+desde o início a fonte inteira para cada `trim`.
+
+Depois, normalizar o trecho já recortado:
 ```
-[i:v] trim=start=IN:end=OUT, setpts=PTS-STARTPTS,
+[i:v] trim=start=0:end=(OUT-IN), setpts=PTS-STARTPTS,
       scale=1920:1080:force_original_aspect_ratio=decrease,
       pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black,
       fps=FPS, setsar=1, format=yuv420p [vi]
@@ -249,7 +254,7 @@ Cada imagem é um input com `-loop 1 -t <duration>` e:
 ### 9.5 Áudio
 - Por clipe: `[i:a] atrim=…, asetpts=PTS-STARTPTS, volume=V [ai]` (clipe sem áudio ou mutado → `anullsrc` do mesmo comprimento).
 - Junções: `acrossfade=d=D` espelhando cada xfade (corte seco = `acrossfade` de 1/FPS ou `concat` de áudio — usar acrossfade curto para manter simetria).
-- Música de fundo: `adelay`, `atrim`, `afade`, `volume`, depois `amix=inputs=2:duration=first` com o áudio principal.
+- Música de fundo: buscar `IN` com `-ss`, limitar com `-t (OUT-IN)`, depois `atrim=start=0:end=(OUT-IN)`, `adelay`, `afade`, `volume` e `amix=inputs=2:duration=first` com o áudio principal.
 - Saída: `aresample=48000`, AAC 192 kbps estéreo.
 
 ### 9.6 Encoding (saída para YouTube, 1080p)

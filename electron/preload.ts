@@ -7,6 +7,16 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
   return () => ipcRenderer.removeListener(channel, listener)
 }
 
+/** Se o React ainda não montou, o X fecha na hora em vez de travar a janela. */
+let closeHandler: (() => void) | null = null
+ipcRenderer.on('app:close-requested', () => {
+  if (closeHandler) {
+    closeHandler()
+    return
+  }
+  void ipcRenderer.invoke('app:allowClose')
+})
+
 const api: AllgoApi = {
   probeFile: (path) => ipcRenderer.invoke('media:probe', path),
   generateThumbnails: (path, count, height) => ipcRenderer.invoke('media:thumbnails', path, count, height),
@@ -43,7 +53,17 @@ const api: AllgoApi = {
   pathForFile: (file) => webUtils.getPathForFile(file),
   pathsExist: (paths) => ipcRenderer.invoke('fs:pathsExist', paths),
 
-  onMenu: (cb) => subscribe<string>('menu:action', cb)
+  onMenu: (cb) => subscribe<string>('menu:action', cb),
+
+  onCloseRequested: (cb) => {
+    closeHandler = cb
+    return () => {
+      if (closeHandler === cb) closeHandler = null
+    }
+  },
+  confirmUnsavedChanges: (projectName) => ipcRenderer.invoke('dialog:unsavedChanges', projectName),
+  confirmAbortExport: () => ipcRenderer.invoke('dialog:abortExport'),
+  allowClose: () => ipcRenderer.invoke('app:allowClose')
 }
 
 contextBridge.exposeInMainWorld('allgo', api)

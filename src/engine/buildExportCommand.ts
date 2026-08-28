@@ -56,13 +56,19 @@ export function buildExportCommand(
   let inputIndex = 0
   const videoInputs: number[] = []
 
-  for (const clip of project.videoTrack) {
+  project.videoTrack.forEach((clip, i) => {
     const media = mediaById.get(clip.mediaId)
     if (!media) throw new Error(`Mídia não encontrada para o clipe ${clip.id}.`)
+    const l = layout.clips[i]
+
+    // Buscar e limitar já na entrada evita decodificar uma fonte grande desde
+    // o início para cada clipe que usa apenas um trecho dela.
     if (options.hwaccel) args.push('-hwaccel', 'auto')
+    if (l.inPoint > 0) args.push('-ss', num(l.inPoint))
+    args.push('-t', num(l.sourceDuration))
     args.push('-i', media.path)
     videoInputs.push(inputIndex++)
-  }
+  })
 
   const overlays: OverlayEntry[] = []
   // trilha 0 primeiro = fica por baixo; dentro da trilha, ordem temporal.
@@ -80,6 +86,9 @@ export function buildExportCommand(
   for (const clip of project.musicTrack) {
     const media = mediaById.get(clip.mediaId)
     if (!media) continue
+    const dur = Math.max(0, clip.outPoint - clip.inPoint)
+    if (clip.inPoint > 0) args.push('-ss', num(clip.inPoint))
+    args.push('-t', num(dur))
     args.push('-i', media.path)
     musicInputs.push({ index: inputIndex++, clip })
   }
@@ -93,7 +102,7 @@ export function buildExportCommand(
   project.videoTrack.forEach((clip, i) => {
     const l = layout.clips[i]
     chunks.push(
-      `[${videoInputs[i]}:v]trim=start=${num(l.inPoint)}:end=${num(l.outPoint)},` +
+      `[${videoInputs[i]}:v]trim=start=0:end=${num(l.sourceDuration)},` +
         `setpts=PTS-STARTPTS,` +
         `scale=${W}:${H}:force_original_aspect_ratio=decrease,` +
         `pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black,` +
@@ -190,7 +199,7 @@ export function buildExportCommand(
     const l = layout.clips[i]
     if (media.hasAudio && !clip.muted && clip.volume > 0) {
       chunks.push(
-        `[${videoInputs[i]}:a]atrim=start=${num(l.inPoint)}:end=${num(l.outPoint)},` +
+        `[${videoInputs[i]}:a]atrim=start=0:end=${num(l.sourceDuration)},` +
           `asetpts=PTS-STARTPTS,volume=${num(clip.volume)},${AFMT}[a${i}]`
       )
     } else {
@@ -215,7 +224,7 @@ export function buildExportCommand(
     musicInputs.forEach(({ index, clip }, m) => {
       const dur = Math.max(0, clip.outPoint - clip.inPoint)
       const parts = [
-        `atrim=start=${num(clip.inPoint)}:end=${num(clip.outPoint)}`,
+        `atrim=start=0:end=${num(dur)}`,
         'asetpts=PTS-STARTPTS',
         `volume=${num(clip.volume)}`
       ]

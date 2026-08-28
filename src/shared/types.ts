@@ -209,4 +209,11 @@ export interface AllgoApi {
   relocateDialog(name: string): Promise<string | null>
 
   onMenu(cb: (action: string) => void): () => void
+
+  /** Clique no X / Alt+F4: o main pede ao renderer para confirmar e depois fechar. */
+  onCloseRequested(cb: () => void): () => void
+  confirmUnsavedChanges(projectName: string): Promise<'save' | 'discard' | 'cancel'>
+  confirmAbortExport(): Promise<boolean>
+  /** Libera o close guard e fecha a janela de verdade. */
+  allowClose(): Promise<void>
 }
