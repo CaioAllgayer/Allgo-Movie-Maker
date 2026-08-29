@@ -77,7 +77,10 @@ export function buildExportCommand(
     for (const clip of ordered) {
       const media = mediaById.get(clip.mediaId)
       if (!media) continue
-      args.push('-loop', '1', '-t', num(clip.duration), '-i', media.path)
+      // Ler a imagem uma única vez é importante para arquivos em unidades
+      // montadas do Google Drive. Repetir com `-loop 1` faz o image2 reabrir a
+      // mesma mídia indefinidamente e pode deixar o FFmpeg bloqueado.
+      args.push('-framerate', num(fps), '-i', media.path)
       overlays.push({ clip, media, inputIndex: inputIndex++ })
     }
   }
@@ -135,7 +138,13 @@ export function buildExportCommand(
 
   overlays.forEach((entry, k) => {
     const { clip, inputIndex: idx } = entry
-    const parts: string[] = ['format=rgba', `scale=w=iw*${num(clip.scale)}:h=-1`]
+    const parts: string[] = [
+      'format=rgba',
+      `scale=w=iw*${num(clip.scale)}:h=-1`,
+      'loop=loop=-1:size=1:start=0',
+      `fps=${num(fps)}`,
+      `trim=duration=${num(clip.duration)}`
+    ]
 
     // ⚠️ Os fades usam tempo LOCAL (0-based) do stream, por isso vêm ANTES do
     // setpts que desloca o overlay para o tempo final. Inverter quebra tudo.

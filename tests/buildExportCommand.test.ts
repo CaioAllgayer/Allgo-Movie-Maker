@@ -169,10 +169,15 @@ describe('buildExportCommand — overlays', () => {
     ]
   })
 
-  it('cada imagem entra como input em loop com a duração do clipe', () => {
+  it('cada imagem entra uma vez e é repetida em memória pela duração do clipe', () => {
     const cmd = buildExportCommand(p, 'out.mp4', options())
     const joined = cmd.args.join(' ')
-    expect(joined).toContain('-loop 1 -t 4 -i C:\\midia\\placa.png')
+    expect(joined).toContain('-framerate 30 -i C:\\midia\\placa.png')
+    expect(joined).not.toContain('-loop 1')
+    const chain = lines(cmd.filterScript).find((l) => l.includes('[ov0]'))!
+    expect(chain).toContain('loop=loop=-1:size=1:start=0')
+    expect(chain).toContain('fps=30')
+    expect(chain).toContain('trim=duration=4')
   })
 
   it('fades vêm em tempo local, ANTES do setpts que desloca o overlay', () => {

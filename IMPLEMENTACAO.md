@@ -266,7 +266,7 @@ Cada imagem é um input com `-loop 1 -t <duration>` e:
 ```
 - Qualidade "Alta" = cq 21, "Média" = cq 25. H.264: `h264_nvenc`, mesmos moldes, cq ~19/23. AV1 (`av1_nvenc`, só RTX 40xx): cq ~28, melhor compressão, YouTube aceita.
 - **Detecção:** no primeiro run, testar cada encoder com um encode de 1 frame (`-f lavfi -i nullsrc … -frames:v 1 -f null -`); guardar resultado. Sem NVENC → fallback `libx264 -preset medium -crf 20` com aviso discreto.
-- Decodificação acelerada: adicionar `-hwaccel auto` antes de cada input de vídeo (com fallback sem a flag se o comando falhar).
+- O encode usa NVENC na GPU. No export com `filter_complex` (escala, xfade e overlays), manter a decodificação em software evita conflitos de transferência entre frames acelerados e esses filtros; `-hwaccel auto` fica reservado para fluxos simples que não misturam filtros software.
 
 ### 9.7 Progresso
 - Usar `-progress pipe:1 -nostats`: parsear `out_time_us` → `% = out_time / duraçãoTotal`. Estimar restante por média móvel da velocidade. Cancelar = `process.kill()` + deletar parcial. Capturar stderr completo para log de erro (mostrar em "detalhes" se falhar).

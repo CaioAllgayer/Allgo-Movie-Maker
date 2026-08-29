@@ -94,7 +94,11 @@ export function ExportModal() {
         quality,
         width: project.width,
         height: project.height,
-        hwaccel: codec !== 'libx264'
+        // O encode continua na GPU via NVENC. Evitamos `-hwaccel auto` na
+        // decodificação porque este filter_complex mistura frames de vídeo,
+        // escala, xfade e overlays em filtros software; nesse caminho o
+        // driver pode travar antes de o primeiro frame chegar ao encoder.
+        hwaccel: false
       })
       setExportState({ jobId, outputPath: path, progress: null })
     } catch (err) {
