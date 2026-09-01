@@ -26,6 +26,11 @@ import { useUi } from '@store/ui'
 import { SourcePreview } from '@components/SourcePreview'
 
 const MUSIC_DRIFT = 0.08
+const PREVIEW_RATES = [1, 1.5, 2, 2.5, 3] as const
+
+function formatPlaybackRate(rate: number): string {
+  return `${String(rate).replace('.', ',')}×`
+}
 
 interface DeckSlot {
   clipIndex: number | null
@@ -63,6 +68,8 @@ export function Preview() {
   const [stage, setStage] = useState({ width: 640, height: 360 })
   const [timecode, setTimecode] = useState(0)
   const [playing, setPlaying] = useState(false)
+  const [playbackRate, setPlaybackRate] = useState(1)
+  const playbackRateRef = useRef(1)
 
   const mediaById = useMemo(() => new Map(project.media.map((m) => [m.id, m])), [project.media])
   const allOverlays = useMemo(
@@ -176,6 +183,7 @@ export function Preview() {
       const srcChanged = slot.src !== src
       slot.clipIndex = clipIndex
       slot.clipId = clip.id
+      el.playbackRate = playbackRateRef.current
       if (srcChanged) {
         slot.src = src
         el.loop = false
@@ -250,6 +258,7 @@ export function Preview() {
         const clip = proj.videoTrack[slot.clipIndex]
         if (!cl || !clip) continue
 
+        el.playbackRate = playbackRateRef.current
         applyVolume(d, clip.volume, clip.muted)
 
         const target = sourceTimeFor(cl, t)
@@ -275,6 +284,7 @@ export function Preview() {
       // Música de fundo: um clipe por vez (uso real é uma trilha só).
       const music = musicRef.current
       if (music) {
+        music.playbackRate = playbackRateRef.current
         const active = proj.musicTrack.find((c) => {
           const dur = c.outPoint - c.inPoint
           return t >= c.start && t < c.start + dur
@@ -356,7 +366,7 @@ export function Preview() {
       if (clock.playing) {
         const result = advanceTimelineTime({
           prevTime: clock.time,
-          dt,
+          dt: dt * playbackRateRef.current,
           playing: true,
           duration: l.duration,
           layout: l,
@@ -615,6 +625,17 @@ export function Preview() {
     clock.setTime(clock.time + frames / project.fps)
   }
 
+  const cyclePlaybackRate = () => {
+    const currentIndex = PREVIEW_RATES.findIndex((rate) => rate === playbackRateRef.current)
+    const nextRate = PREVIEW_RATES[(currentIndex + 1) % PREVIEW_RATES.length] ?? 1
+    playbackRateRef.current = nextRate
+    setPlaybackRate(nextRate)
+    for (const deckRef of deckRefs) {
+      if (deckRef.current) deckRef.current.playbackRate = nextRate
+    }
+    if (musicRef.current) musicRef.current.playbackRate = nextRate
+  }
+
   const selectionBox = useMemo(
     () =>
       selectedImage
@@ -722,6 +743,14 @@ export function Preview() {
         </button>
         <button className="icon-btn" title="Ir ao fim (End)" onClick={() => { clock.setPlaying(false); clock.setTime(layout.duration) }}>
           <ChevronLast size={17} />
+        </button>
+        <button
+          className={`speed-btn${playbackRate > 1 ? ' active' : ''}`}
+          title="Velocidade da prévia — clique para alternar"
+          aria-label={`Velocidade da prévia: ${formatPlaybackRate(playbackRate)}. Clique para alternar`}
+          onClick={cyclePlaybackRate}
+        >
+          {formatPlaybackRate(playbackRate)}
         </button>
         <span className="timecode">
           <b>{formatTime(timecode)}</b> / {formatTime(layout.duration)}
