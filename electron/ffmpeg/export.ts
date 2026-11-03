@@ -33,6 +33,10 @@ export async function startExport(
   outputPath: string,
   options: Omit<ExportOptions, 'filterScriptPath'>
 ): Promise<string> {
+  if (!options.codec.endsWith('_nvenc')) {
+    throw new Error('Este aplicativo está configurado para exportar somente pela RTX 4050 (NVENC).')
+  }
+
   const id = `job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const scriptPath = join(tempDir(), `${id}.filter.txt`)
 

@@ -250,6 +250,7 @@ Cada imagem é um input com `-loop 1 -t <duration>` e:
 - Contraste: `eq contrast = 1 + v/100` (→ 0…2); preview CSS `contrast(1 + v/100)`.
 - Saturação: `eq saturation = 1 + v/100` (→ 0…2); preview CSS `saturate(1 + v/100)`.
 ⚠️ CSS e `eq` não são matematicamente idênticos (curvas diferentes) — com esses mapeamentos ficam próximos o suficiente para ajustes moderados; documentar no código. Validar visualmente exportando um frame de teste.
+> **Atualizado (2026-11):** o `eq` foi abandonado — medido, o contraste divergia até 50/255 do preview (ele só age na luma). O export agora replica o CSS em RGB (`lutrgb` + matriz do `saturate()`); ver `colorFilterChain`.
 
 ### 9.5 Áudio
 - Por clipe: `[i:a] atrim=…, asetpts=PTS-STARTPTS, volume=V [ai]` (clipe sem áudio ou mutado → `anullsrc` do mesmo comprimento).

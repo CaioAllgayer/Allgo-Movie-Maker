@@ -8,6 +8,8 @@ import { formatBytes, suggestedFileName } from '@engine/media'
 import { useProject } from '@store/project'
 import { useUi } from '@store/ui'
 
+type ExportResolution = 'project' | '720p' | '4k'
+
 export function ExportModal() {
   const open = useUi((s) => s.showExportModal)
   const setOpen = useUi((s) => s.setShowExportModal)
@@ -24,14 +26,12 @@ export function ExportModal() {
     if (encoders?.hevc_nvenc) list.push({ value: 'hevc_nvenc', label: 'HEVC · NVENC (recomendado)' })
     if (encoders?.h264_nvenc) list.push({ value: 'h264_nvenc', label: 'H.264 · NVENC (mais compatível)' })
     if (encoders?.av1_nvenc) list.push({ value: 'av1_nvenc', label: 'AV1 · NVENC (menor arquivo)' })
-    // Sem GPU detectada o HEVC continua disponível pela CPU — mesmo codec, mais lento.
-    list.push({ value: 'libx265', label: `HEVC · CPU (libx265)${encoders?.hevc_nvenc ? '' : ' — recomendado'}` })
-    list.push({ value: 'libx264', label: 'H.264 · CPU (libx264)' })
     return list
   }, [encoders])
 
-  const [codec, setCodec] = useState<EncoderName>('libx265')
+  const [codec, setCodec] = useState<EncoderName>('hevc_nvenc')
   const [quality, setQuality] = useState<ExportQuality>('alta')
+  const [resolution, setResolution] = useState<ExportResolution>('project')
   // 30 fps por padrão: vídeo falado não precisa de 60, e o arquivo fica bem menor.
   const [fps, setFps] = useState<number>(30)
   const [outputPath, setOutputPath] = useState<string | null>(null)
@@ -40,7 +40,8 @@ export function ExportModal() {
 
   useEffect(() => {
     if (open) {
-      setCodec(available[0]?.value ?? 'libx265')
+      setCodec(available[0]?.value ?? 'hevc_nvenc')
+      setResolution('project')
       setFps(30)
       setResult(null)
       setShowLog(false)
@@ -73,6 +74,10 @@ export function ExportModal() {
 
   const running = exportState.jobId !== null
   const progress = exportState.progress
+  const isHorizontal = project.width > project.height
+  const has720p = project.width * 9 === project.height * 16 || project.width * 16 === project.height * 9
+  const outputWidth = resolution === '720p' ? (isHorizontal ? 1280 : 720) : resolution === '4k' ? project.width * 2 : project.width
+  const outputHeight = resolution === '720p' ? (isHorizontal ? 720 : 1280) : resolution === '4k' ? project.height * 2 : project.height
 
   const chooseOutput = async () => {
     const path = await window.allgo.saveVideoDialog(suggestedFileName())
@@ -92,8 +97,8 @@ export function ExportModal() {
         fps,
         codec,
         quality,
-        width: project.width,
-        height: project.height,
+        width: outputWidth,
+        height: outputHeight,
         // O encode continua na GPU via NVENC. Evitamos `-hwaccel auto` na
         // decodificação porque este filter_complex mistura frames de vídeo,
         // escala, xfade e overlays em filtros software; nesse caminho o
@@ -164,12 +169,18 @@ export function ExportModal() {
           <div className="field-row">
             <label className="field">
               <span>Codec</span>
-              <select value={codec} disabled={running} onChange={(e) => setCodec(e.target.value as EncoderName)}>
-                {available.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
+              <select
+                value={available.length ? codec : ''}
+                disabled={running || available.length === 0}
+                onChange={(e) => setCodec(e.target.value as EncoderName)}
+              >
+                {available.length ? available.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  )) : (
+                    <option value="">NVENC indisponível</option>
+                  )}
               </select>
             </label>
             <label className="field">
@@ -184,7 +195,11 @@ export function ExportModal() {
           <div className="field-row">
             <label className="field">
               <span>Resolução</span>
-              <input type="text" readOnly value={`${project.width}×${project.height}`} />
+              <select value={resolution} disabled={running} onChange={(e) => setResolution(e.target.value as ExportResolution)}>
+                <option value="project">Projeto ({project.width}×{project.height})</option>
+                {has720p && <option value="720p">720p ({isHorizontal ? '1280×720' : '720×1280'})</option>}
+                <option value="4k">Resolução dupla ({project.width * 2}×{project.height * 2})</option>
+              </select>
             </label>
             <label className="field">
               <span>FPS</span>
@@ -195,6 +210,8 @@ export function ExportModal() {
               </select>
             </label>
           </div>
+
+          <p className="hint">Escolha Horizontal ou Reels em Formato, na barra superior, e confira a prévia antes de exportar.</p>
 
           <div className="summary">
             <div>
@@ -209,14 +226,16 @@ export function ExportModal() {
             </div>
             <div>
               <span>Tamanho estimado</span>
-              <b>≈ {formatBytes(estimateSize(layout.duration, quality, codec, fps))}</b>
+              <b>≈ {formatBytes(estimateSize(layout.duration, quality, codec, fps, outputWidth, outputHeight))}</b>
             </div>
           </div>
 
-          {!encoders?.hevc_nvenc && !encoders?.h264_nvenc && (
+          {!available.length && (
             <p className="hint" style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
               <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
-              Nenhum encoder NVIDIA detectado — o export vai usar a CPU (libx264), o que é bem mais lento.
+              {encoders === null
+                ? 'Verificando a RTX 4050…'
+                : 'NVENC indisponível. Ative a RTX 4050 e reabra o Allgo Movie Maker para exportar.'}
             </p>
           )}
 
@@ -244,7 +263,7 @@ export function ExportModal() {
               <button className="btn" onClick={close}>
                 Fechar
               </button>
-              <button className="btn primary" onClick={start} disabled={!project.videoTrack.length}>
+              <button className="btn primary" onClick={start} disabled={!project.videoTrack.length || !available.length}>
                 Exportar
               </button>
             </>

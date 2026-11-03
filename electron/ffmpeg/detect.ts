@@ -1,47 +1,15 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { app } from 'electron'
 import type { EncoderSupport } from '@shared/types'
 import { ffmpegPath } from './paths'
 import { run } from './run'
 
 const ENCODERS = ['hevc_nvenc', 'h264_nvenc', 'av1_nvenc'] as const
 
-function cacheFile(): string {
-  return join(app.getPath('userData'), 'encoders.json')
-}
-
-/** Primeira linha do `ffmpeg -version` — identifica a build embarcada. */
-async function ffmpegVersionLine(): Promise<string> {
-  const { stdout, stderr } = await run(ffmpegPath(), ['-version'], 10_000)
-  return (stdout || stderr).split('\n')[0]?.trim() ?? ''
-}
-
-interface EncoderCache {
-  /** versão do ffmpeg que gerou este resultado — trocar o binário refaz a detecção */
-  ffmpeg: string
-  encoders: EncoderSupport
-}
-
 /**
  * Testa cada encoder com um encode real de 1 frame — `-encoders` mente: lista
  * o NVENC mesmo em máquina sem placa NVIDIA, e só falha na hora do export.
- * Resultado fica em cache no userData, amarrado à versão do ffmpeg: se o
- * binário for trocado (ex.: npm run setup baixou outra build), re-detecta.
+ * A detecção é refeita a cada inicialização para acompanhar o estado atual da GPU.
  */
-export async function detectEncoders(force = false): Promise<EncoderSupport> {
-  const file = cacheFile()
-  const version = await ffmpegVersionLine()
-  if (!force && existsSync(file)) {
-    try {
-      const cached = JSON.parse(readFileSync(file, 'utf8')) as Partial<EncoderCache>
-      if (cached.encoders && cached.ffmpeg === version) return cached.encoders
-      // Formato antigo (sem versão) ou binário trocado: refaz a detecção.
-    } catch {
-      /* cache corrompido: refaz a detecção */
-    }
-  }
-
+export async function detectEncoders(): Promise<EncoderSupport> {
   const result: EncoderSupport = { hevc_nvenc: false, h264_nvenc: false, av1_nvenc: false }
 
   for (const enc of ENCODERS) {
@@ -51,7 +19,7 @@ export async function detectEncoders(force = false): Promise<EncoderSupport> {
         '-hide_banner', '-nostdin',
         '-f', 'lavfi',
         '-i', 'nullsrc=s=640x360:d=0.1',
-        '-c:v', enc,
+        '-c:v', enc, '-gpu', '0',
         '-frames:v', '1',
         '-f', 'null', '-'
       ],
@@ -60,13 +28,6 @@ export async function detectEncoders(force = false): Promise<EncoderSupport> {
     result[enc] = code === 0
   }
 
-  try {
-    mkdirSync(dirname(file), { recursive: true })
-    const cache: EncoderCache = { ffmpeg: version, encoders: result }
-    writeFileSync(file, JSON.stringify(cache, null, 2), 'utf8')
-  } catch {
-    /* cache é otimização, não é crítico */
-  }
   return result
 }
 

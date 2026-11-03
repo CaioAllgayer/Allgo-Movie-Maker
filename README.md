@@ -1,7 +1,7 @@
 # Allgo Movie Maker
 
 Editor de vídeo desktop **local, offline e de página única** — estilo CapCut simplificado.
-Corta, junta com desvanecimento, coloca placas PNG por cima e exporta em 1080p com o
+Corta, junta com desvanecimento, coloca placas PNG por cima e exporta em formato horizontal ou Reels com o
 encoder da GPU NVIDIA.
 
 O valor do programa é ser simples, bonito e rápido. Ele deliberadamente **não** tem
@@ -10,10 +10,14 @@ texto/legendas, keyframes, chroma key, velocidade variável nem outras transiç�
 ## Fluxo
 
 1. Arraste 1 a 5 vídeos para a janela.
-2. Corte o início/fim dos clipes e junte-os com crossfade.
-3. Coloque PNGs por cima (placas, balões, prints), posicionando e redimensionando no preview.
-4. Ajuste brilho, contraste e saturação do vídeo inteiro.
-5. Exporte em 1080p pronto para o YouTube.
+2. Escolha **Horizontal · 16:9** ou **Reels · 9:16** no campo Formato da barra superior.
+3. Corte o início/fim dos clipes e junte-os com crossfade.
+4. Coloque imagens por cima (placas, balões, prints), posicionando e redimensionando na prévia já no formato final.
+5. Ajuste brilho, contraste e saturação do vídeo inteiro.
+6. Exporte na resolução do projeto ou em resolução dupla, sem alterar o enquadramento.
+
+Projetos antigos continuam com o formato salvo. Para reaproveitar um projeto horizontal em Reels,
+troque o Formato para **Reels · 9:16**, confira a posição e o tamanho das imagens na prévia e salve o projeto antes de exportar.
 
 ## Instalação
 
@@ -100,10 +104,11 @@ Quem precisa do tempo se inscreve em `clock` e escreve direto no DOM.
 Windows com muitos inputs. `buildExportCommand` é uma função pura e é a parte com
 mais testes — é onde bugs se escondem.
 
-**Preview e export não são pixel-idênticos em cor.** O preview usa `filter` CSS e o
-export usa o filtro `eq` do FFmpeg; as curvas são diferentes. Com o mapeamento usado
-(`brightness = v/200`, `contrast = 1 + v/100`, `saturation = 1 + v/100`) os dois ficam
-próximos o suficiente para ajustes moderados.
+**Cor: o export replica o `filter` CSS do preview.** Brilho (`1 + v/200`) e contraste
+(`1 + v/100`) são aplicados por canal em RGB com `lutrgb`, e a saturação (`1 + v/100`)
+com a matriz do `saturate()` do CSS via `colorchannelmixer`. A diferença medida entre
+preview e arquivo fica em ~3/255 (arredondamento da conversão YUV↔RGB). Não usar o `eq`
+do FFmpeg: o contraste dele só age na luma e as cores saíam bem mais apagadas.
 
 ## Formato `.allgo`
 

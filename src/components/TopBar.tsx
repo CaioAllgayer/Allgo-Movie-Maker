@@ -12,6 +12,9 @@ export function TopBar({
   onExport: () => void
 }) {
   const name = useProject((s) => s.project.name)
+  const width = useProject((s) => s.project.width)
+  const height = useProject((s) => s.project.height)
+  const edit = useProject((s) => s.edit)
   const dirty = useProject((s) => s.dirty)
   const hasClips = useProject((s) => s.project.videoTrack.length > 0)
   const past = useProject((s) => s.past.length)
@@ -30,6 +33,29 @@ export function TopBar({
       </div>
       <span className="project-name">{name}</span>
       {dirty && <span className="dot-dirty" title="Alterações não salvas" />}
+
+      <label className="project-format" title="O formato do projeto define o quadro da prévia e da exportação">
+        <span>Formato</span>
+        <select
+          aria-label="Formato do projeto"
+          value={`${width}x${height}`}
+          disabled={exporting}
+          onChange={(event) => {
+            const [nextWidth, nextHeight] = event.target.value.split('x').map(Number)
+            if (nextWidth === width && nextHeight === height) return
+            edit((project) => {
+              project.width = nextWidth
+              project.height = nextHeight
+            })
+          }}
+        >
+          {!(width === 1920 && height === 1080) && !(width === 1080 && height === 1920) && (
+            <option value={`${width}x${height}`}>{width}×{height}</option>
+          )}
+          <option value="1920x1080">Horizontal · 16:9</option>
+          <option value="1080x1920">Reels · 9:16</option>
+        </select>
+      </label>
 
       <div className="spacer" />
 

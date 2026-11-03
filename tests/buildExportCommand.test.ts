@@ -64,6 +64,61 @@ describe('buildExportCommand — estrutura básica', () => {
     expect(chain).toContain('format=yuv420p')
   })
 
+  it('aceita saída 4K e mantém o enquadramento das placas', () => {
+    const fourK = buildExportCommand(
+      project({
+        media: [media('a'), media('png', { kind: 'image', path: 'C:\\midia\\placa.png' })],
+        videoTrack: [videoClip('v1', 'a')],
+        overlayTracks: [[imageClip('i1', 'png', { scale: 0.5 })]]
+      }),
+      'out.mp4',
+      options({ width: 3840, height: 2160 })
+    )
+    expect(fourK.filterScript).toContain('scale=3840:2160:force_original_aspect_ratio=decrease')
+    expect(fourK.filterScript).toContain('pad=3840:2160:(ow-iw)/2:(oh-ih)/2:color=black')
+    expect(fourK.filterScript).toContain('scale=w=iw*1:h=-1')
+  })
+
+  it('exporta em 720p horizontal e Reels sem mudar a proporção das placas', () => {
+    for (const [projectWidth, projectHeight, outputWidth, outputHeight] of [
+      [1920, 1080, 1280, 720],
+      [1080, 1920, 720, 1280]
+    ]) {
+      const hd = buildExportCommand(
+        project({
+          width: projectWidth,
+          height: projectHeight,
+          media: [media('a'), media('png', { kind: 'image' })],
+          videoTrack: [videoClip('v1', 'a')],
+          overlayTracks: [[imageClip('i1', 'png', { scale: 0.6 })]]
+        }),
+        'out.mp4',
+        options({ width: outputWidth, height: outputHeight })
+      )
+      expect(hd.filterScript).toContain(`scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=decrease`)
+      expect(hd.filterScript).toContain('scale=w=iw*0.4:h=-1')
+    }
+  })
+
+  it('exporta projeto Reels com a placa no tamanho visto na prévia', () => {
+    const reels = project({
+      width: 1080,
+      height: 1920,
+      media: [media('a'), media('png', { kind: 'image', width: 960, height: 452 })],
+      videoTrack: [videoClip('v1', 'a')],
+      overlayTracks: [[imageClip('i1', 'png', { x: 0.5, y: 0.16, scale: 0.57 })]]
+    })
+    const command = buildExportCommand(reels, 'out.mp4', options({ width: 1080, height: 1920 }))
+    expect(command.filterScript).toContain('scale=1080:1920:force_original_aspect_ratio=decrease')
+    expect(command.filterScript).toContain('scale=w=iw*0.57:h=-1')
+    expect(command.filterScript).toContain("x='W*0.5-w/2':y='H*0.16-h/2'")
+  })
+
+  it('impede exportar em outra proporção sem conferir o enquadramento no editor', () => {
+    expect(() => buildExportCommand(p, 'out.mp4', options({ width: 1080, height: 1920 })))
+      .toThrow(/formato no editor/i)
+  })
+
   it('a duração relatada é a mesma do computeLayout', () => {
     const cmd = buildExportCommand(p, 'out.mp4', options())
     expect(cmd.duration).toBeCloseTo(computeLayout(p).duration, 6)
@@ -225,27 +280,36 @@ describe('buildExportCommand — overlays', () => {
 })
 
 describe('buildExportCommand — cor, fades de preto e música', () => {
-  it('não emite eq quando os ajustes estão neutros', () => {
+  it('não emite filtro de cor quando os ajustes estão neutros', () => {
     const p = project({ media: [media('a')], videoTrack: [videoClip('v1', 'a')] })
-    expect(buildExportCommand(p, 'out.mp4', options()).filterScript).not.toContain('eq=')
+    const script = buildExportCommand(p, 'out.mp4', options()).filterScript
+    expect(script).not.toContain('format=gbrp')
+    expect(colorFilterChain({ brightness: 0, contrast: 0, saturation: 0 })).toBeNull()
   })
 
-  it('replica o filtro CSS: brilho multiplicativo em RGB + contraste/saturação', () => {
+  it('replica o filtro CSS em RGB: brilho e contraste por canal + matriz do saturate()', () => {
     const p = project({
       media: [media('a')],
       videoTrack: [videoClip('v1', 'a')],
       adjust: { brightness: 20, contrast: 10, saturation: -50 }
     })
     const chain = lines(buildExportCommand(p, 'out.mp4', options()).filterScript).find((l) =>
-      l.includes('colorchannelmixer')
+      l.includes('format=gbrp')
     )!
-    expect(chain).toContain('format=gbrp')
-    expect(chain).toContain('colorchannelmixer=rr=1.1:gg=1.1:bb=1.1')
-    expect(chain).toContain('eq=contrast=1.1:saturation=0.5')
-    expect(chain).not.toContain('eq=brightness')
+    // eq mexe só na luma e usa outra conta de saturação — não pode voltar.
+    expect(chain).not.toContain('eq=')
+    const e = 'clip((clip(val/255*1.1\\,0\\,1)-0.5)*1.1+0.5\\,0\\,1)*255'
     expect(colorFilterChain({ brightness: 20, contrast: 10, saturation: -50 })).toBe(
-      'format=gbrp,colorchannelmixer=rr=1.1:gg=1.1:bb=1.1,eq=contrast=1.1:saturation=0.5,format=yuv420p'
+      'format=gbrp,' +
+        `lutrgb=r='${e}':g='${e}':b='${e}',` +
+        'colorchannelmixer=rr=0.6065:rg=0.3575:rb=0.036:gr=0.1065:gg=0.8575:gb=0.036:br=0.1065:bg=0.3575:bb=0.536,' +
+        'format=yuv420p'
     )
+  })
+
+  it('só saturação dispensa o lutrgb; só brilho dispensa a matriz', () => {
+    expect(colorFilterChain({ brightness: 0, contrast: 0, saturation: 50 })).not.toContain('lutrgb')
+    expect(colorFilterChain({ brightness: 30, contrast: 0, saturation: 0 })).not.toContain('colorchannelmixer')
   })
 
   it('aplica cor depois dos overlays (vale para o quadro composto)', () => {
@@ -256,7 +320,8 @@ describe('buildExportCommand — cor, fades de preto e música', () => {
       adjust: { brightness: 10, contrast: 0, saturation: 0 }
     })
     const script = buildExportCommand(p, 'out.mp4', options()).filterScript
-    expect(script.indexOf('overlay=x=')).toBeLessThan(script.indexOf('colorchannelmixer'))
+    expect(script.indexOf('lutrgb')).toBeGreaterThan(-1)
+    expect(script.indexOf('overlay=x=')).toBeLessThan(script.indexOf('lutrgb'))
   })
 
   it('fade de preto é aplicado no stream final, depois dos overlays', () => {
@@ -334,5 +399,12 @@ describe('estimateSize', () => {
     const high = estimateSize(60, 'alta', 'hevc_nvenc', 60)
     expect(high).toBeGreaterThan(base)
     expect(high).toBeLessThan(base * 2)
+  })
+
+  it('4K aumenta a estimativa de tamanho proporcionalmente aos pixels', () => {
+    const fullHd = estimateSize(60, 'alta', 'hevc_nvenc', 30, 1920, 1080)
+    const fourK = estimateSize(60, 'alta', 'hevc_nvenc', 30, 3840, 2160)
+    expect(fourK).toBeGreaterThan(fullHd * 3.5)
+    expect(fourK).toBeLessThan(fullHd * 4.5)
   })
 })

@@ -87,10 +87,9 @@ export async function importPaths(paths: string[]): Promise<{ items: MediaItem[]
 /**
  * Mapeamento dos sliders para o filtro CSS do preview.
  *
- * Brilho CSS é multiplicativo (`brightness(1 + v/200)`). O export replica isso
- * com `colorchannelmixer` em RGB (ver `colorFilterChain` em buildExportCommand),
- * não com o `eq brightness` aditivo — esse último quase não aparecia no arquivo
- * final. Contraste e saturação usam o mesmo fator nos dois lados.
+ * O export replica exatamente estas três funções CSS em RGB (`lutrgb` para
+ * brilho/contraste, matriz do `saturate()` em `colorchannelmixer` — ver
+ * `colorFilterChain` em buildExportCommand). Mudou aqui, mude lá também.
  */
 export function cssFilterFor(adjust: ColorAdjust): string {
   const brightness = 1 + adjust.brightness / 200

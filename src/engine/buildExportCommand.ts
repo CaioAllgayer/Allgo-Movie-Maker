@@ -39,6 +39,9 @@ export function buildExportCommand(
   if (project.videoTrack.length === 0) {
     throw new Error('Não há clipes na trilha de vídeo.')
   }
+  if (options.width * project.height !== options.height * project.width) {
+    throw new Error('A proporção da exportação deve ser igual à do projeto. Ajuste o formato no editor antes de exportar.')
+  }
 
   const mediaById = new Map(project.media.map((m) => [m.id, m]))
   const layout = computeLayout({ ...project, fps: options.fps })
@@ -138,9 +141,12 @@ export function buildExportCommand(
 
   overlays.forEach((entry, k) => {
     const { clip, inputIndex: idx } = entry
+    // A largura do projeto é a referência das placas na prévia. A saída tem
+    // a mesma proporção e pode ter resolução maior, então escalamos junto.
+    const overlayScale = clip.scale * (W / project.width)
     const parts: string[] = [
       'format=rgba',
-      `scale=w=iw*${num(clip.scale)}:h=-1`,
+      `scale=w=iw*${num(overlayScale)}:h=-1`,
       'loop=loop=-1:size=1:start=0',
       `fps=${num(fps)}`,
       `trim=duration=${num(clip.duration)}`
@@ -209,7 +215,12 @@ export function buildExportCommand(
     if (media.hasAudio && !clip.muted && clip.volume > 0) {
       chunks.push(
         `[${videoInputs[i]}:a]atrim=start=0:end=${num(l.sourceDuration)},` +
-          `asetpts=PTS-STARTPTS,volume=${num(clip.volume)},${AFMT}[a${i}]`
+          `asetpts=PTS-STARTPTS,` +
+          // Alguns arquivos declaram uma faixa de áudio, mas não têm pacotes no
+          // trecho escolhido. Sem silêncio até o fim do clipe, o acrossfade
+          // encerra também a saída de vídeo na próxima junção.
+          `apad=whole_dur=${num(l.sourceDuration)},atrim=duration=${num(l.sourceDuration)},` +
+          `volume=${num(clip.volume)},${AFMT}[a${i}]`
       )
     } else {
       // Clipe sem faixa de áudio ou mutado: silêncio do mesmo comprimento, para
@@ -289,11 +300,13 @@ const CQ: Record<EncoderName, { alta: number; media: number }> = {
 /**
  * Replica o `filter` CSS do preview no grafo do FFmpeg.
  *
- * Brilho CSS é multiplicativo; `eq=brightness` é aditivo em YUV e no arquivo
- * final quase não se via. Aqui: converte para RGB, multiplica os canais
- * (mesmo fator `1 + v/200` do CSS), aplica contraste/saturação do `eq` e
- * volta para yuv420p. O `format=gbrp` também força download de frames de GPU
- * quando o decode veio com `-hwaccel`.
+ * Tudo em RGB, na mesma ordem e com as mesmas contas do CSS:
+ * - brilho: multiplica cada canal por `1 + v/200` e clampa;
+ * - contraste: `(x - 0.5) * c + 0.5` em CADA canal e clampa;
+ * - saturação: matriz do `saturate()` da spec Filter Effects.
+ * Não usar `eq`: o contraste dele só mexe na luma (as cores ficavam bem mais
+ * apagadas que na prévia) e a saturação usa outra conta. O `format=gbrp`
+ * também força download de frames de GPU quando o decode veio com `-hwaccel`.
  */
 export function colorFilterChain(adjust: ColorAdjust | undefined): string | null {
   const brightness = adjust?.brightness ?? 0
@@ -304,14 +317,30 @@ export function colorFilterChain(adjust: ColorAdjust | undefined): string | null
   const c = 1 + contrast / 100
   const s = 1 + saturation / 100
   const parts = ['format=gbrp']
-  if (Math.abs(b - 1) > 1e-9) {
-    parts.push(`colorchannelmixer=rr=${num(b)}:gg=${num(b)}:bb=${num(b)}`)
+  if (Math.abs(b - 1) > 1e-9 || Math.abs(c - 1) > 1e-9) {
+    // vírgulas escapadas: dentro do filtergraph a vírgula separa filtros.
+    const e = `clip((clip(val/255*${num(b)}\\,0\\,1)-0.5)*${num(c)}+0.5\\,0\\,1)*255`
+    parts.push(`lutrgb=r='${e}':g='${e}':b='${e}'`)
   }
-  if (Math.abs(c - 1) > 1e-9 || Math.abs(s - 1) > 1e-9) {
-    parts.push(`eq=contrast=${num(c)}:saturation=${num(s)}`)
+  if (Math.abs(s - 1) > 1e-9) {
+    const m = saturateMatrix(s)
+    parts.push(
+      `colorchannelmixer=rr=${num(m[0])}:rg=${num(m[1])}:rb=${num(m[2])}:` +
+        `gr=${num(m[3])}:gg=${num(m[4])}:gb=${num(m[5])}:` +
+        `br=${num(m[6])}:bg=${num(m[7])}:bb=${num(m[8])}`
+    )
   }
   parts.push('format=yuv420p')
   return parts.join(',')
+}
+
+/** Matriz 3x3 (linha a linha) do `saturate(s)` do CSS. */
+function saturateMatrix(s: number): number[] {
+  return [
+    0.213 + 0.787 * s, 0.715 - 0.715 * s, 0.072 - 0.072 * s,
+    0.213 - 0.213 * s, 0.715 + 0.285 * s, 0.072 - 0.072 * s,
+    0.213 - 0.213 * s, 0.715 - 0.715 * s, 0.072 + 0.928 * s
+  ]
 }
 
 export function encoderArgs(codec: EncoderName, quality: 'alta' | 'media'): string[] {
@@ -325,6 +354,8 @@ export function encoderArgs(codec: EncoderName, quality: 'alta' | 'media'): stri
   }
   const base = [
     '-c:v', codec,
+    // GPU NVIDIA 0 é a RTX 4050 nesta máquina; nunca encaminhar o encode à CPU.
+    '-gpu', '0',
     '-preset', 'p5',
     '-tune', 'hq',
     '-rc', 'vbr',
@@ -359,12 +390,15 @@ export function estimateSize(
   duration: number,
   quality: 'alta' | 'media',
   codec: EncoderName = 'hevc_nvenc',
-  fps = 30
+  fps = 30,
+  width = 1920,
+  height = 1080
 ): number {
   const mbps = ESTIMATE_MBPS[codecFamily(codec)][quality]
   // 60 fps não dobra o tamanho (compressão temporal aproveita quadros parecidos).
   const fpsFactor = fps >= 60 ? 1.35 : 1
-  return Math.round(((mbps * fpsFactor * 1_000_000) / 8 + 192_000 / 8) * duration)
+  const resolutionFactor = (width * height) / (1920 * 1080)
+  return Math.round(((mbps * fpsFactor * resolutionFactor * 1_000_000) / 8 + 192_000 / 8) * duration)
 }
 
 export function layoutOf(project: Project): Layout {

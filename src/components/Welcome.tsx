@@ -25,7 +25,7 @@ export function Welcome({
           <Clapperboard size={28} />
         </span>
         <h1>Allgo Movie Maker</h1>
-        <p>Corte, junte com desvanecimento, coloque placas e exporte em 1080p.</p>
+        <p>Corte, junte com desvanecimento, coloque placas e exporte em formato horizontal ou Reels.</p>
 
         <div
           className={`dropzone${over ? ' over' : ''}`}

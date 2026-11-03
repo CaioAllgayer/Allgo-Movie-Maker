@@ -49,10 +49,10 @@ export interface ImageClip {
   /** segundos na linha do tempo FINAL (pós-crossfades) */
   start: number
   duration: number
-  /** centro da imagem, normalizado 0..1 sobre o quadro 1920x1080 */
+  /** centro da imagem, normalizado 0..1 sobre o quadro do projeto */
   x: number
   y: number
-  /** multiplicador do tamanho natural da imagem (1 = pixels nativos sobre 1920x1080) */
+  /** multiplicador do tamanho natural da imagem em pixels do projeto */
   scale: number
   /** 0..1 */
   opacity: number
